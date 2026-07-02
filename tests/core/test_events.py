@@ -40,6 +40,12 @@ def test_market_event_frozen():
         event.timestamp = datetime(2024, 2, 1)  # type: ignore[misc]
 
 
+def test_market_event_bars_immutable():
+    event = MarketEvent(timestamp=TS, bars={"AAPL": Bar(close=150.0)})
+    with pytest.raises(TypeError):
+        event.bars["AAPL"] = Bar(close=0.0)  # type: ignore[index]
+
+
 def test_signal_event_type():
     event = SignalEvent(timestamp=TS, scores={"AAPL": 0.8, "GOOG": -0.3})
     assert event.type == "SIGNAL"
@@ -50,6 +56,12 @@ def test_signal_event_frozen():
     event = SignalEvent(timestamp=TS, scores={})
     with pytest.raises(dataclasses.FrozenInstanceError):
         event.scores = {}  # type: ignore[misc]
+
+
+def test_signal_event_scores_immutable():
+    event = SignalEvent(timestamp=TS, scores={"AAPL": 0.8})
+    with pytest.raises(TypeError):
+        event.scores["AAPL"] = 0.0  # type: ignore[index]
 
 
 def test_order_event_buy():

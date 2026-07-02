@@ -15,7 +15,7 @@ class Strategy(Protocol):
 
 class Portfolio(Protocol):
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]: ...
-    def process_fill(self, event: FillEvent) -> Sequence[Event]: ...
+    def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]: ...
 
 
 class ExecutionHandler(Protocol):
@@ -58,6 +58,8 @@ class Engine:
                 if self._risk_manager is not None:
                     self._risk_manager.observe_fill(event)
                 self._put_all(self._portfolio.process_fill(event))
+            case _:
+                raise NotImplementedError(f"unhandled event type: {event!r}")
 
     def run(self) -> None:
         while True:
