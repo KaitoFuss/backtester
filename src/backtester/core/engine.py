@@ -10,16 +10,20 @@ class DataHandler(Protocol):
 
 
 class Strategy(Protocol):
-    def on_market(self, event: MarketEvent) -> Sequence[SignalEvent]: ...
+    def process_market(self, event: MarketEvent) -> Sequence[SignalEvent]: ...
 
 
 class Portfolio(Protocol):
-    def on_signal(self, event: SignalEvent) -> Sequence[OrderEvent]: ...
-    def on_fill(self, event: FillEvent) -> Sequence[Event]: ...
+    def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]: ...
+    def process_fill(self, event: FillEvent) -> Sequence[Event]: ...
 
 
 class ExecutionHandler(Protocol):
-    def on_order(self, event: OrderEvent) -> Sequence[FillEvent]: ...
+    def process_order(self, event: OrderEvent) -> Sequence[FillEvent]: ...
+
+
+class RiskManager(Protocol):
+    def observe_fill(self, event: FillEvent) -> None: ...
 
 
 class Engine:
@@ -29,11 +33,13 @@ class Engine:
         strategy: Strategy,
         portfolio: Portfolio,
         execution_handler: ExecutionHandler,
+        risk_manager: RiskManager | None = None,
     ) -> None:
         self._data_handler = data_handler
         self._strategy = strategy
         self._portfolio = portfolio
         self._execution_handler = execution_handler
+        self._risk_manager = risk_manager
         self._queue = EventQueue()
 
     def _put_all(self, events: Sequence[Event]) -> None:
@@ -43,13 +49,15 @@ class Engine:
     def _dispatch(self, event: Event) -> None:
         match event:
             case MarketEvent():
-                self._put_all(self._strategy.on_market(event))
+                self._put_all(self._strategy.process_market(event))
             case SignalEvent():
-                self._put_all(self._portfolio.on_signal(event))
+                self._put_all(self._portfolio.process_signal(event))
             case OrderEvent():
-                self._put_all(self._execution_handler.on_order(event))
+                self._put_all(self._execution_handler.process_order(event))
             case FillEvent():
-                self._put_all(self._portfolio.on_fill(event))
+                if self._risk_manager is not None:
+                    self._risk_manager.observe_fill(event)
+                self._put_all(self._portfolio.process_fill(event))
 
     def run(self) -> None:
         while True:

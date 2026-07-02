@@ -26,7 +26,7 @@ class RecordingStrategy:
         self.received: list[MarketEvent] = []
         self._emit = emit or []
 
-    def on_market(self, event: MarketEvent) -> Sequence[SignalEvent]:
+    def process_market(self, event: MarketEvent) -> Sequence[SignalEvent]:
         self.received.append(event)
         return self._emit
 
@@ -37,11 +37,11 @@ class RecordingPortfolio:
         self.fills: list[FillEvent] = []
         self._emit_on_signal = emit_on_signal or []
 
-    def on_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
+    def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
         self.signals.append(event)
         return self._emit_on_signal
 
-    def on_fill(self, event: FillEvent) -> Sequence[Event]:
+    def process_fill(self, event: FillEvent) -> Sequence[Event]:
         self.fills.append(event)
         return []
 
@@ -51,7 +51,7 @@ class RecordingExecutionHandler:
         self.orders: list[OrderEvent] = []
         self._emit = emit or []
 
-    def on_order(self, event: OrderEvent) -> Sequence[FillEvent]:
+    def process_order(self, event: OrderEvent) -> Sequence[FillEvent]:
         self.orders.append(event)
         return self._emit
 
@@ -155,3 +155,49 @@ def test_engine_stops_when_data_exhausted():
     _make_engine([], strategy, portfolio, execution).run()
 
     assert strategy.received == []
+
+
+def test_risk_manager_observes_fills():
+    class RecordingRiskManager:
+        def __init__(self) -> None:
+            self.observed: list[FillEvent] = []
+
+        def observe_fill(self, event: FillEvent) -> None:
+            self.observed.append(event)
+
+    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    signal = SignalEvent(timestamp=TS, scores={"AAPL": 0.9})
+    order = OrderEvent(timestamp=TS, ticker="AAPL", quantity=100, direction="BUY")
+    fill = FillEvent(
+        timestamp=TS,
+        ticker="AAPL",
+        quantity=100,
+        direction="BUY",
+        fill_price=150.0,
+        commission=1.0,
+        slippage=0.05,
+    )
+    strategy = RecordingStrategy(emit=[signal])
+    portfolio = RecordingPortfolio(emit_on_signal=[order])
+    execution = RecordingExecutionHandler(emit=[fill])
+    risk = RecordingRiskManager()
+
+    engine = Engine(
+        data_handler=StubDataHandler([market]),
+        strategy=strategy,
+        portfolio=portfolio,
+        execution_handler=execution,
+        risk_manager=risk,
+    )
+    engine.run()
+
+    assert risk.observed == [fill]
+
+
+def test_engine_runs_without_risk_manager():
+    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    strategy = RecordingStrategy()
+    portfolio = RecordingPortfolio()
+    execution = RecordingExecutionHandler()
+
+    _make_engine([market], strategy, portfolio, execution).run()
