@@ -20,4 +20,4 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run mypy .
-      - run: uv run pytest
+      - run: uv run pytest || [ "$?" = 5 ]  # exit 5 = no tests collected yet
