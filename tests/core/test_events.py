@@ -3,11 +3,9 @@ from datetime import datetime
 
 import pytest
 
-from backtester.core.events import Bar, FillEvent, MarketEvent, OrderEvent, SignalEvent, Ticker
+from backtester.core.events import Bar, FillEvent, MarketEvent, OrderEvent, SignalEvent
 
 TS = datetime(2024, 1, 1)
-AAPL = Ticker("AAPL")
-GOOG = Ticker("GOOG")
 
 
 def test_bar_defaults():
@@ -31,9 +29,9 @@ def test_bar_frozen():
 
 
 def test_market_event_type():
-    event = MarketEvent(timestamp=TS, bars={AAPL: Bar(close=150.0)})
+    event = MarketEvent(timestamp=TS, bars={"AAPL": Bar(close=150.0)})
     assert event.type == "MARKET"
-    assert event.bars[AAPL].close == 150.0
+    assert event.bars["AAPL"].close == 150.0
 
 
 def test_market_event_frozen():
@@ -43,15 +41,15 @@ def test_market_event_frozen():
 
 
 def test_market_event_bars_immutable():
-    event = MarketEvent(timestamp=TS, bars={AAPL: Bar(close=150.0)})
+    event = MarketEvent(timestamp=TS, bars={"AAPL": Bar(close=150.0)})
     with pytest.raises(TypeError):
-        event.bars[AAPL] = Bar(close=0.0)  # type: ignore[index]
+        event.bars["AAPL"] = Bar(close=0.0)  # type: ignore[index]
 
 
 def test_signal_event_type():
-    event = SignalEvent(timestamp=TS, scores={AAPL: 0.8, GOOG: -0.3})
+    event = SignalEvent(timestamp=TS, scores={"AAPL": 0.8, "GOOG": -0.3})
     assert event.type == "SIGNAL"
-    assert event.scores[AAPL] == pytest.approx(0.8)
+    assert event.scores["AAPL"] == pytest.approx(0.8)
 
 
 def test_signal_event_frozen():
@@ -61,24 +59,24 @@ def test_signal_event_frozen():
 
 
 def test_signal_event_scores_immutable():
-    event = SignalEvent(timestamp=TS, scores={AAPL: 0.8})
+    event = SignalEvent(timestamp=TS, scores={"AAPL": 0.8})
     with pytest.raises(TypeError):
-        event.scores[AAPL] = 0.0  # type: ignore[index]
+        event.scores["AAPL"] = 0.0  # type: ignore[index]
 
 
 def test_order_event_buy():
-    event = OrderEvent(timestamp=TS, ticker=AAPL, quantity=100, direction="BUY")
+    event = OrderEvent(timestamp=TS, ticker="AAPL", quantity=100, direction="BUY")
     assert event.type == "ORDER"
     assert event.direction == "BUY"
 
 
 def test_order_event_sell():
-    event = OrderEvent(timestamp=TS, ticker=Ticker("MSFT"), quantity=50, direction="SELL")
+    event = OrderEvent(timestamp=TS, ticker="MSFT", quantity=50, direction="SELL")
     assert event.direction == "SELL"
 
 
 def test_order_event_frozen():
-    event = OrderEvent(timestamp=TS, ticker=AAPL, quantity=10, direction="BUY")
+    event = OrderEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY")
     with pytest.raises(dataclasses.FrozenInstanceError):
         event.quantity = 999  # type: ignore[misc]
 
@@ -86,7 +84,7 @@ def test_order_event_frozen():
 def test_fill_event_type():
     event = FillEvent(
         timestamp=TS,
-        ticker=AAPL,
+        ticker="AAPL",
         quantity=100,
         direction="BUY",
         fill_price=150.25,
@@ -100,18 +98,12 @@ def test_fill_event_type():
 
 
 def test_fill_event_defaults_zero_cost():
-    event = FillEvent(
-        timestamp=TS,
-        ticker=AAPL,
-        quantity=100,
-        direction="BUY",
-        fill_price=150.0,
-    )
+    event = FillEvent(timestamp=TS, ticker="AAPL", quantity=100, direction="BUY", fill_price=150.0)
     assert event.commission == 0.0
     assert event.slippage == 0.0
 
 
 def test_fill_event_frozen():
-    event = FillEvent(timestamp=TS, ticker=AAPL, quantity=100, direction="BUY", fill_price=150.0)
+    event = FillEvent(timestamp=TS, ticker="AAPL", quantity=100, direction="BUY", fill_price=150.0)
     with pytest.raises(dataclasses.FrozenInstanceError):
         event.fill_price = 0.0  # type: ignore[misc]

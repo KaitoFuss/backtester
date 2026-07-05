@@ -2,9 +2,9 @@ import types
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, NewType
+from typing import Literal
 
-Ticker = NewType("Ticker", str)
+type Ticker = str
 
 
 @dataclass(frozen=True)
