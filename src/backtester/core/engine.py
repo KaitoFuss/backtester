@@ -23,7 +23,7 @@ class ExecutionHandler(Protocol):
 
 
 class RiskManager(Protocol):
-    def observe_fill(self, event: FillEvent) -> None: ...
+    def evaluate_fill(self, event: FillEvent) -> None: ...
 
 
 class Engine:
@@ -56,7 +56,7 @@ class Engine:
                 self._put_all(self._execution_handler.process_order(event))
             case FillEvent():
                 if self._risk_manager is not None:
-                    self._risk_manager.observe_fill(event)
+                    self._risk_manager.evaluate_fill(event)
                 self._put_all(self._portfolio.process_fill(event))
             case _:
                 raise NotImplementedError(f"unhandled event type: {event!r}")

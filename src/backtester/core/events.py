@@ -2,7 +2,9 @@ import types
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Literal, NewType
+
+Ticker = NewType("Ticker", str)
 
 
 @dataclass(frozen=True)
@@ -17,7 +19,7 @@ class Bar:
 @dataclass(frozen=True)
 class MarketEvent:
     timestamp: datetime
-    bars: Mapping[str, Bar]
+    bars: Mapping[Ticker, Bar]
     type: Literal["MARKET"] = field(default="MARKET", init=False)
 
     def __post_init__(self) -> None:
@@ -27,7 +29,7 @@ class MarketEvent:
 @dataclass(frozen=True)
 class SignalEvent:
     timestamp: datetime
-    scores: Mapping[str, float]
+    scores: Mapping[Ticker, float]
     type: Literal["SIGNAL"] = field(default="SIGNAL", init=False)
 
     def __post_init__(self) -> None:
@@ -37,7 +39,7 @@ class SignalEvent:
 @dataclass(frozen=True)
 class OrderEvent:
     timestamp: datetime
-    ticker: str
+    ticker: Ticker
     quantity: int
     direction: Literal["BUY", "SELL"]
     type: Literal["ORDER"] = field(default="ORDER", init=False)
@@ -46,12 +48,12 @@ class OrderEvent:
 @dataclass(frozen=True)
 class FillEvent:
     timestamp: datetime
-    ticker: str
+    ticker: Ticker
     quantity: int
     direction: Literal["BUY", "SELL"]
     fill_price: float
-    commission: float
-    slippage: float
+    commission: float = 0.0
+    slippage: float = 0.0
     type: Literal["FILL"] = field(default="FILL", init=False)
 
 

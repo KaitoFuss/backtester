@@ -2,10 +2,12 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from backtester.core.engine import Engine, ExecutionHandler, Portfolio, RiskManager, Strategy
-from backtester.core.events import Bar, FillEvent, MarketEvent, OrderEvent, SignalEvent
+from backtester.core.events import Bar, FillEvent, MarketEvent, OrderEvent, SignalEvent, Ticker
 
 TS = datetime(2024, 1, 1)
 BAR = Bar(close=150.0)
+AAPL = Ticker("AAPL")
+SPY = Ticker("SPY")
 
 
 class StubDataHandler:
@@ -80,7 +82,7 @@ class RecordingRiskManager:
     def __init__(self) -> None:
         self.observed: list[FillEvent] = []
 
-    def observe_fill(self, event: FillEvent) -> None:
+    def evaluate_fill(self, event: FillEvent) -> None:
         self.observed.append(event)
 
 
@@ -102,18 +104,18 @@ def _make_engine(
 
 def test_full_pipeline() -> None:
     """MarketEvent drives the full MARKET → SIGNAL → ORDER → FILL chain."""
-    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    market = MarketEvent(timestamp=TS, bars={AAPL: BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
 
     _make_engine([market], strategy, portfolio, execution).run()
 
     assert strategy.received == [market]
     assert len(portfolio.signals) == 1
-    assert "AAPL" in portfolio.signals[0].scores
+    assert AAPL in portfolio.signals[0].scores
     assert len(execution.orders) == 1
-    assert execution.orders[0].ticker == "AAPL"
+    assert execution.orders[0].ticker == AAPL
     assert len(portfolio.fills) == 1
-    assert portfolio.fills[0].ticker == "AAPL"
+    assert portfolio.fills[0].ticker == AAPL
 
 
 def test_fill_orders_dispatched() -> None:
@@ -122,27 +124,25 @@ def test_fill_orders_dispatched() -> None:
     class HedgingPortfolio(StubPortfolio):
         def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
             self.fills.append(event)
-            if event.ticker == "AAPL":
+            if event.ticker == AAPL:
                 return [
-                    OrderEvent(
-                        timestamp=event.timestamp, ticker="SPY", quantity=50, direction="SELL"
-                    )
+                    OrderEvent(timestamp=event.timestamp, ticker=SPY, quantity=50, direction="SELL")
                 ]
             return []
 
-    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    market = MarketEvent(timestamp=TS, bars={AAPL: BAR})
     strategy, portfolio, execution = StubStrategy(), HedgingPortfolio(), StubExecutionHandler()
 
     _make_engine([market], strategy, portfolio, execution).run()
 
-    assert [o.ticker for o in execution.orders] == ["AAPL", "SPY"]
+    assert [o.ticker for o in execution.orders] == [AAPL, SPY]
 
 
 def test_engine_processes_multiple_bars() -> None:
     ts2 = datetime(2024, 1, 2)
     bars = [
-        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
-        MarketEvent(timestamp=ts2, bars={"AAPL": Bar(close=155.0)}),
+        MarketEvent(timestamp=TS, bars={AAPL: BAR}),
+        MarketEvent(timestamp=ts2, bars={AAPL: Bar(close=155.0)}),
     ]
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
 
@@ -162,22 +162,22 @@ def test_engine_stops_when_data_exhausted() -> None:
     assert strategy.received == []
 
 
-def test_risk_manager_observes_fills() -> None:
-    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+def test_risk_manager_evaluates_fills() -> None:
+    market = MarketEvent(timestamp=TS, bars={AAPL: BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
     risk = RecordingRiskManager()
 
     _make_engine([market], strategy, portfolio, execution, risk_manager=risk).run()
 
     assert len(risk.observed) == 1
-    assert risk.observed[0].ticker == "AAPL"
+    assert risk.observed[0].ticker == AAPL
 
 
-def test_risk_manager_observes_fills_across_bars() -> None:
+def test_risk_manager_evaluates_fills_across_bars() -> None:
     ts2 = datetime(2024, 1, 2)
     bars = [
-        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
-        MarketEvent(timestamp=ts2, bars={"AAPL": Bar(close=155.0)}),
+        MarketEvent(timestamp=TS, bars={AAPL: BAR}),
+        MarketEvent(timestamp=ts2, bars={AAPL: Bar(close=155.0)}),
     ]
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
     risk = RecordingRiskManager()
@@ -185,7 +185,7 @@ def test_risk_manager_observes_fills_across_bars() -> None:
     _make_engine(bars, strategy, portfolio, execution, risk_manager=risk).run()
 
     assert len(risk.observed) == 2
-    assert [f.ticker for f in risk.observed] == ["AAPL", "AAPL"]
+    assert [f.ticker for f in risk.observed] == [AAPL, AAPL]
 
 
 def test_risk_manager_accumulates_metrics() -> None:
@@ -196,14 +196,14 @@ def test_risk_manager_accumulates_metrics() -> None:
             self.total_commission: float = 0.0
             self.total_slippage: float = 0.0
 
-        def observe_fill(self, event: FillEvent) -> None:
+        def evaluate_fill(self, event: FillEvent) -> None:
             self.total_commission += event.commission
             self.total_slippage += event.slippage
 
     ts2 = datetime(2024, 1, 2)
     bars = [
-        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
-        MarketEvent(timestamp=ts2, bars={"AAPL": Bar(close=155.0)}),
+        MarketEvent(timestamp=TS, bars={AAPL: BAR}),
+        MarketEvent(timestamp=ts2, bars={AAPL: Bar(close=155.0)}),
     ]
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
     tracker = CostTracker()
@@ -215,7 +215,7 @@ def test_risk_manager_accumulates_metrics() -> None:
 
 
 def test_engine_runs_without_risk_manager() -> None:
-    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    market = MarketEvent(timestamp=TS, bars={AAPL: BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
 
     _make_engine([market], strategy, portfolio, execution).run()
