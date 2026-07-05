@@ -9,6 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pandas>=3.0.3",
     "pyarrow>=24.0.0",
+    "yfinance>=1.5.1",
 ]
 
 [build-system]
@@ -59,6 +60,10 @@ files = ["src", "tests"]
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "yfinance.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "--cov=backtester --cov-report=term-missing"
