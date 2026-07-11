@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "deny": [
+    "ask": [
       "Bash(git push --force*)",
       "Bash(git push -f*)",
       "Bash(git *--force*)",
