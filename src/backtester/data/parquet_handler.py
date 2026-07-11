@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
@@ -13,12 +12,9 @@ class ParquetHandler:
         self._tickers = tickers
         self._index = 0
 
-    def __iter__(self) -> Iterator[MarketEvent]:
-        return self
-
-    def __next__(self) -> MarketEvent:
+    def get_next_bar(self) -> MarketEvent | None:
         if self._index >= len(self._files):
-            raise StopIteration
+            return None
         path = self._files[self._index]
         self._index += 1
         return self._read(path)
