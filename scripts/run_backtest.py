@@ -41,7 +41,7 @@ class LoggingPortfolio:
 
 
 class IdealExecutionHandler:
-    def __init__(self, handler: ParquetHandler) -> None:
+    def __init__(self) -> None:
         self._last_bars: dict[str, float] = {}
 
     def set_bars(self, event: MarketEvent) -> None:
@@ -50,6 +50,7 @@ class IdealExecutionHandler:
     def process_order(self, event: OrderEvent) -> list[FillEvent]:
         price = self._last_bars.get(event.ticker)
         if price is None:
+            print(f"WARN: no price for {event.ticker} on {event.timestamp:%Y-%m-%d}, order dropped")
             return []
         return [
             FillEvent(
@@ -83,7 +84,7 @@ def main() -> None:
     args = parser.parse_args()
 
     raw_handler = ParquetHandler(Path(args.data), tickers=args.tickers)
-    execution = IdealExecutionHandler(raw_handler)
+    execution = IdealExecutionHandler()
     data_handler = BridgedDataHandler(raw_handler, execution)
 
     engine = Engine(
