@@ -32,3 +32,6 @@ htmlcov/
 # Build artifacts
 dist/
 build/
+
+# Local data
+data/
