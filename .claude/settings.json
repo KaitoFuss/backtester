@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git *--force*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(git clean -d*)",
+      "Bash(git branch -D*)",
+      "Bash(git checkout -- *)",
+      "Bash(git checkout .)",
+      "Bash(git restore *)",
+      "Bash(git *--no-verify*)",
+      "Bash(git *--no-gpg-sign*)",
+      "Bash(rm -rf*)",
+      "Bash(rm -fr*)",
+      "Bash(sudo rm*)"
+    ]
+  }
+}
