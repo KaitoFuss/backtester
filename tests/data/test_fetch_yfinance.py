@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from backtester.data.fetch_yfinance import fetch_to_parquet
-from backtester.data.parquet_handler import ParquetHandler
+from backtester.data.parquet_market_data import ParquetMarketData
 
 TICKERS = ["AAPL", "MSFT"]
 
@@ -45,7 +45,7 @@ def test_writes_one_parquet_file_per_day(tmp_path: Path) -> None:
 def test_round_trip_through_parquet_handler(tmp_path: Path) -> None:
     fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-05", tmp_path, downloader=_fake_downloader)
 
-    handler = ParquetHandler(tmp_path)
+    handler = ParquetMarketData(tmp_path)
 
     first = handler.get_next_bar()
     assert first is not None

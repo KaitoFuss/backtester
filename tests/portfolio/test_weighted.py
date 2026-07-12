@@ -19,7 +19,7 @@ class FakePriceSource:
 
 def test_signal_sizes_orders_proportional_to_score() -> None:
     prices = FakePriceSource({"AAPL": 100.0, "MSFT": 200.0})
-    portfolio = WeightedPortfolio(prices=prices, initial_cash=10_000.0)
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0, "MSFT": -1.0}))
 
@@ -34,7 +34,7 @@ def test_signal_sizes_orders_proportional_to_score() -> None:
 
 def test_signal_skips_tickers_with_unknown_price() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(prices=prices, initial_cash=10_000.0)
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"MSFT": 1.0}))
 
@@ -43,7 +43,7 @@ def test_signal_skips_tickers_with_unknown_price() -> None:
 
 def test_all_zero_scores_yield_no_orders() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(prices=prices, initial_cash=10_000.0)
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.0}))
 
@@ -52,7 +52,7 @@ def test_all_zero_scores_yield_no_orders() -> None:
 
 def test_fill_updates_cash_and_positions() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(prices=prices, initial_cash=10_000.0)
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     portfolio.process_fill(
         FillEvent(
@@ -75,7 +75,7 @@ def test_equity_excludes_position_with_missing_price_and_logs_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(prices=prices, initial_cash=10_000.0)
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
     )
@@ -93,7 +93,7 @@ def test_equity_excludes_position_with_missing_price_and_logs_warning(
 
 def test_no_order_when_position_already_at_target() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(prices=prices, initial_cash=100.0)
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=100.0)
 
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="AAPL", quantity=1, direction="BUY", fill_price=100.0)

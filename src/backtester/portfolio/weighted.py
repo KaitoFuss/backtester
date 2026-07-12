@@ -8,15 +8,15 @@ logger = logging.getLogger(__name__)
 
 
 class WeightedPortfolio:
-    def __init__(self, prices: PriceSource, initial_cash: float = 100_000.0) -> None:
-        self._prices = prices
+    def __init__(self, price_source: PriceSource, initial_cash: float = 100_000.0) -> None:
+        self._price_source = price_source
         self._cash = initial_cash
         self._positions: dict[Ticker, int] = {}
 
     def mark_to_market(self) -> float:
         total = self._cash
         for ticker, qty in self._positions.items():
-            price = self._prices.get_price(ticker)
+            price = self._price_source.get_price(ticker)
             if price is None:
                 logger.warning(
                     "No price for held position %s (qty=%d); excluding from equity", ticker, qty
@@ -31,7 +31,7 @@ class WeightedPortfolio:
 
         orders: list[OrderEvent] = []
         for ticker, score in event.scores.items():
-            price = self._prices.get_price(ticker)
+            price = self._price_source.get_price(ticker)
             if price is None or score == 0 or total_abs_score == 0:
                 continue
 
@@ -53,7 +53,6 @@ class WeightedPortfolio:
 
     def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
         signed_qty = event.quantity if event.direction == "BUY" else -event.quantity
-        notional = signed_qty * event.fill_price
-        self._cash -= notional + event.commission
+        self._cash -= signed_qty * event.fill_price + event.commission
         self._positions[event.ticker] = self._positions.get(event.ticker, 0) + signed_qty
         return []

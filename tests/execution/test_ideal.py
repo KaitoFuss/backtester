@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 from backtester.core.events import OrderEvent
 from backtester.execution.ideal import IdealExecutionHandler
 
@@ -15,7 +17,7 @@ class FakePriceSource:
 
 
 def test_process_order_fills_at_current_price() -> None:
-    handler = IdealExecutionHandler(prices=FakePriceSource({"AAPL": 150.0}))
+    handler = IdealExecutionHandler(price_source=FakePriceSource({"AAPL": 150.0}))
 
     fills = handler.process_order(
         OrderEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY")
@@ -29,11 +31,8 @@ def test_process_order_fills_at_current_price() -> None:
     assert fill.fill_price == 150.0
 
 
-def test_process_order_drops_order_on_missing_price() -> None:
-    handler = IdealExecutionHandler(prices=FakePriceSource({}))
+def test_process_order_raises_on_missing_price() -> None:
+    handler = IdealExecutionHandler(price_source=FakePriceSource({}))
 
-    fills = handler.process_order(
-        OrderEvent(timestamp=TS, ticker="MSFT", quantity=5, direction="SELL")
-    )
-
-    assert fills == []
+    with pytest.raises(RuntimeError, match="MSFT"):
+        handler.process_order(OrderEvent(timestamp=TS, ticker="MSFT", quantity=5, direction="SELL"))

@@ -6,7 +6,16 @@ import pandas as pd
 from backtester.core.events import Bar, MarketEvent
 
 
-class ParquetHandler:
+class ParquetMarketData:
+    """Reads daily Parquet bars and doubles as a shared price lookup.
+
+    A single instance is meant to be wired into both the `Engine` (as
+    `DataHandler`) and any consumers that need current prices (as
+    `PriceSource`, e.g. `Portfolio`/`ExecutionHandler`) — `get_price`
+    reads a cache populated by `get_next_bar`, so it only reflects bars
+    already consumed by the engine loop.
+    """
+
     def __init__(self, data_dir: Path, tickers: list[str] | None = None) -> None:
         self._files = sorted(data_dir.glob("*.parquet"))
         self._tickers = tickers

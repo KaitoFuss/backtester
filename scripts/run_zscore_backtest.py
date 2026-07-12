@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 
 from backtester.core.engine import Engine
-from backtester.data.parquet_handler import ParquetHandler
+from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
 from backtester.portfolio.weighted import WeightedPortfolio
 from backtester.risk.performance import PerformanceTracker
@@ -28,21 +28,25 @@ def main() -> None:
     parser.add_argument("--tickers", nargs="+", default=None)
     parser.add_argument("--window", type=int, default=20, help="Z-score lookback window")
     parser.add_argument("--initial-cash", type=float, default=100_000.0)
-    parser.add_argument("--plot-dir", default="output", help="Directory to write PNG plots to")
+    parser.add_argument(
+        "--plot-dir",
+        default="output",
+        help="Root directory for plots; a per-strategy subfolder is created under it",
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s"
     )
 
-    data_handler = ParquetHandler(Path(args.data), tickers=args.tickers)
-    portfolio = WeightedPortfolio(prices=data_handler, initial_cash=args.initial_cash)
+    market_data = ParquetMarketData(Path(args.data), tickers=args.tickers)
+    portfolio = WeightedPortfolio(price_source=market_data, initial_cash=args.initial_cash)
     tracker = PerformanceTracker(portfolio=portfolio)
 
     engine = Engine(
-        data_handler=data_handler,
+        data_handler=market_data,
         strategy=ZScoreMovingAverageStrategy(window=args.window),
         portfolio=portfolio,
-        execution_handler=IdealExecutionHandler(prices=data_handler),
+        execution_handler=IdealExecutionHandler(price_source=market_data),
         risk_manager=tracker,
     )
 
@@ -58,7 +62,7 @@ def main() -> None:
     logger.info("Sharpe (rf=0):       %.2f", metrics.sharpe)
     logger.info("Max drawdown:        %s", f"{metrics.max_drawdown:.2%}")
 
-    plot_dir = Path(args.plot_dir)
+    plot_dir = Path(args.plot_dir) / "zscore_ma"
     plot_mark_to_market_history(tracker.mark_to_market_history, plot_dir / "equity_curve.png")
     plot_drawdown(tracker.mark_to_market_history, plot_dir / "drawdown.png")
     logger.info("Plots written to %s/", plot_dir)
