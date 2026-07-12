@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+import itertools
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -11,6 +12,7 @@ _MUTED = "#898781"
 _GRID = "#e1e0d9"
 _BLUE = "#2a78d6"
 _RED = "#e34948"
+_SERIES_COLORS = (_BLUE, "#898781", "#2aa876", "#c77d2e")
 
 
 def _style_axes(ax: Axes) -> None:
@@ -25,15 +27,19 @@ def _style_axes(ax: Axes) -> None:
 
 
 def plot_mark_to_market_history(
-    mark_to_market_history: Sequence[tuple[datetime, float]], out_path: Path
+    series: Mapping[str, Sequence[tuple[datetime, float]]], out_path: Path
 ) -> None:
-    timestamps, values = zip(*mark_to_market_history, strict=True)
-
     fig, ax = plt.subplots(figsize=(10, 5), facecolor=_SURFACE)
     _style_axes(ax)
-    ax.plot(timestamps, values, color=_BLUE, linewidth=2)
+    for (label, history), color in zip(
+        series.items(), itertools.cycle(_SERIES_COLORS), strict=False
+    ):
+        timestamps, values = zip(*history, strict=True)
+        ax.plot(timestamps, values, color=color, linewidth=2, label=label)
     ax.set_title("Equity Curve", color=_INK, fontsize=12, loc="left")
     ax.set_ylabel("Portfolio value ($)", color=_MUTED, fontsize=9)
+    if len(series) > 1:
+        ax.legend(frameon=False, labelcolor=_INK, fontsize=9)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150, bbox_inches="tight")

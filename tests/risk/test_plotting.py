@@ -14,7 +14,18 @@ def test_plot_mark_to_market_history_writes_file(tmp_path: Path) -> None:
     curve = [(_ts(0), 1_000.0), (_ts(1), 1_100.0), (_ts(2), 1_050.0)]
     out_path = tmp_path / "nested" / "equity_curve.png"
 
-    plot_mark_to_market_history(curve, out_path)
+    plot_mark_to_market_history({"Strategy": curve}, out_path)
+
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_plot_mark_to_market_history_supports_multiple_series(tmp_path: Path) -> None:
+    strategy = [(_ts(0), 1_000.0), (_ts(1), 1_100.0), (_ts(2), 1_050.0)]
+    benchmark = [(_ts(0), 1_000.0), (_ts(1), 1_020.0), (_ts(2), 1_030.0)]
+    out_path = tmp_path / "nested" / "equity_curve.png"
+
+    plot_mark_to_market_history({"Strategy": strategy, "Buy & Hold": benchmark}, out_path)
 
     assert out_path.exists()
     assert out_path.stat().st_size > 0

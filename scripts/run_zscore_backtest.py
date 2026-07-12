@@ -1,5 +1,5 @@
-"""Run the z-score mean-reversion strategy against locally fetched Parquet data
-and print first-pass performance metrics.
+"""Run the z-score mean-reversion strategy against locally fetched Parquet data,
+alongside a buy-and-hold benchmark, and print first-pass performance metrics.
 
 Usage:
     uv run scripts/run_zscore_backtest.py --data data/raw --tickers AAPL MSFT
@@ -11,15 +11,45 @@ import argparse
 import logging
 from pathlib import Path
 
-from backtester.core.engine import Engine
+from backtester.core.engine import Engine, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
 from backtester.portfolio.weighted import WeightedPortfolio
 from backtester.risk.performance import PerformanceTracker
 from backtester.risk.plotting import plot_drawdown, plot_mark_to_market_history
+from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
 
 logger = logging.getLogger(__name__)
+
+
+def _run_backtest(
+    data_dir: Path, tickers: list[str] | None, strategy: Strategy, initial_cash: float
+) -> PerformanceTracker:
+    market_data = ParquetMarketData(data_dir, tickers=tickers)
+    portfolio = WeightedPortfolio(price_source=market_data, initial_cash=initial_cash)
+    tracker = PerformanceTracker(portfolio=portfolio)
+
+    engine = Engine(
+        data_handler=market_data,
+        strategy=strategy,
+        portfolio=portfolio,
+        execution_handler=IdealExecutionHandler(price_source=market_data),
+        risk_manager=tracker,
+    )
+    engine.run()
+    return tracker
+
+
+def _log_metrics(label: str, tracker: PerformanceTracker) -> None:
+    metrics = tracker.metrics()
+    logger.info("=== %s ===", label)
+    logger.info("Bars processed:      %d", len(tracker.mark_to_market_history))
+    logger.info("Total return:        %s", f"{metrics.total_return:.2%}")
+    logger.info("Annualized return:   %s", f"{metrics.annualized_return:.2%}")
+    logger.info("Annualized vol:      %s", f"{metrics.annualized_vol:.2%}")
+    logger.info("Sharpe (rf=0):       %.2f", metrics.sharpe)
+    logger.info("Max drawdown:        %s", f"{metrics.max_drawdown:.2%}")
 
 
 def main() -> None:
@@ -37,34 +67,28 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s"
     )
+    data_dir = Path(args.data)
 
-    market_data = ParquetMarketData(Path(args.data), tickers=args.tickers)
-    portfolio = WeightedPortfolio(price_source=market_data, initial_cash=args.initial_cash)
-    tracker = PerformanceTracker(portfolio=portfolio)
-
-    engine = Engine(
-        data_handler=market_data,
-        strategy=ZScoreMovingAverageStrategy(window=args.window),
-        portfolio=portfolio,
-        execution_handler=IdealExecutionHandler(price_source=market_data),
-        risk_manager=tracker,
+    logger.info("Running backtest on %s …", data_dir)
+    strategy_tracker = _run_backtest(
+        data_dir, args.tickers, ZScoreMovingAverageStrategy(window=args.window), args.initial_cash
+    )
+    benchmark_tracker = _run_backtest(
+        data_dir, args.tickers, BuyAndHoldStrategy(), args.initial_cash
     )
 
-    logger.info("Running backtest on %s …", args.data)
-    engine.run()
-
-    metrics = tracker.metrics()
-    logger.info("=== Performance ===")
-    logger.info("Bars processed:      %d", len(tracker.mark_to_market_history))
-    logger.info("Total return:        %s", f"{metrics.total_return:.2%}")
-    logger.info("Annualized return:   %s", f"{metrics.annualized_return:.2%}")
-    logger.info("Annualized vol:      %s", f"{metrics.annualized_vol:.2%}")
-    logger.info("Sharpe (rf=0):       %.2f", metrics.sharpe)
-    logger.info("Max drawdown:        %s", f"{metrics.max_drawdown:.2%}")
+    _log_metrics("Strategy", strategy_tracker)
+    _log_metrics("Buy & Hold", benchmark_tracker)
 
     plot_dir = Path(args.plot_dir) / "zscore_ma"
-    plot_mark_to_market_history(tracker.mark_to_market_history, plot_dir / "equity_curve.png")
-    plot_drawdown(tracker.mark_to_market_history, plot_dir / "drawdown.png")
+    plot_mark_to_market_history(
+        {
+            "Strategy": strategy_tracker.mark_to_market_history,
+            "Buy & Hold": benchmark_tracker.mark_to_market_history,
+        },
+        plot_dir / "equity_curve.png",
+    )
+    plot_drawdown(strategy_tracker.mark_to_market_history, plot_dir / "drawdown.png")
     logger.info("Plots written to %s/", plot_dir)
 
 
