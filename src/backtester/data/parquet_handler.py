@@ -11,6 +11,7 @@ class ParquetHandler:
         self._files = sorted(data_dir.glob("*.parquet"))
         self._tickers = tickers
         self._index = 0
+        self._last_price: dict[str, float] = {}
 
     def get_next_bar(self) -> MarketEvent | None:
         if self._index >= len(self._files):
@@ -18,6 +19,9 @@ class ParquetHandler:
         path = self._files[self._index]
         self._index += 1
         return self._read(path)
+
+    def get_price(self, ticker: str) -> float | None:
+        return self._last_price.get(ticker)
 
     def _read(self, path: Path) -> MarketEvent:
         timestamp = datetime.strptime(path.stem, "%Y-%m-%d")
@@ -36,4 +40,5 @@ class ParquetHandler:
                 low=float(row["low"]) if "low" in cols else None,
                 volume=float(row["volume"]) if "volume" in cols else None,
             )
+        self._last_price.update({ticker: bar.close for ticker, bar in bars.items()})
         return MarketEvent(timestamp=timestamp, bars=bars)

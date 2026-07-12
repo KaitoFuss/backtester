@@ -20,6 +20,9 @@ class StubDataHandler:
         self._idx += 1
         return event
 
+    def get_price(self, ticker: str) -> float | None:
+        return None
+
 
 class StubStrategy:
     """Emits one SignalEvent per bar with score 1.0 for every ticker received."""
@@ -79,6 +82,10 @@ class StubExecutionHandler:
 class RecordingRiskManager:
     def __init__(self) -> None:
         self.observed: list[FillEvent] = []
+        self.market_events: list[MarketEvent] = []
+
+    def evaluate_market(self, event: MarketEvent) -> None:
+        self.market_events.append(event)
 
     def evaluate_fill(self, event: FillEvent) -> None:
         self.observed.append(event)
@@ -188,6 +195,20 @@ def test_risk_manager_evaluates_fills_across_bars() -> None:
     assert [f.ticker for f in risk.observed] == ["AAPL", "AAPL"]
 
 
+def test_risk_manager_evaluates_market_events_per_bar() -> None:
+    ts2 = datetime(2024, 1, 2)
+    bars = [
+        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
+        MarketEvent(timestamp=ts2, bars={"AAPL": Bar(close=155.0)}),
+    ]
+    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
+    risk = RecordingRiskManager()
+
+    _make_engine(bars, strategy, portfolio, execution, risk_manager=risk).run()
+
+    assert risk.market_events == bars
+
+
 def test_risk_manager_accumulates_metrics() -> None:
     """A stateful RiskManager can track running totals across fills."""
 
@@ -195,6 +216,9 @@ def test_risk_manager_accumulates_metrics() -> None:
         def __init__(self) -> None:
             self.total_commission: float = 0.0
             self.total_slippage: float = 0.0
+
+        def evaluate_market(self, event: MarketEvent) -> None:
+            pass
 
         def evaluate_fill(self, event: FillEvent) -> None:
             self.total_commission += event.commission
