@@ -16,7 +16,7 @@ from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
 from backtester.portfolio.weighted import WeightedPortfolio
 from backtester.risk.performance import PerformanceTracker
-from backtester.risk.plotting import plot_drawdown, plot_mark_to_market_history
+from backtester.risk.plotting import plot_equity_curve
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
 
@@ -81,14 +81,13 @@ def main() -> None:
     _log_metrics("Buy & Hold", benchmark_tracker)
 
     plot_dir = Path(args.plot_dir) / "zscore_ma"
-    plot_mark_to_market_history(
+    plot_equity_curve(
         {
             "Strategy": strategy_tracker.mark_to_market_history,
             "Buy & Hold": benchmark_tracker.mark_to_market_history,
         },
         plot_dir / "equity_curve.png",
     )
-    plot_drawdown(strategy_tracker.mark_to_market_history, plot_dir / "drawdown.png")
     logger.info("Plots written to %s/", plot_dir)
 
 

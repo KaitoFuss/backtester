@@ -11,7 +11,6 @@ _INK = "#0b0b0b"
 _MUTED = "#898781"
 _GRID = "#e1e0d9"
 _BLUE = "#2a78d6"
-_RED = "#e34948"
 _SERIES_COLORS = (_BLUE, "#898781", "#2aa876", "#c77d2e")
 
 
@@ -26,50 +25,44 @@ def _style_axes(ax: Axes) -> None:
     ax.set_axisbelow(True)
 
 
-def plot_mark_to_market_history(
+def plot_equity_curve(
     series: Mapping[str, Sequence[tuple[datetime, float]]], out_path: Path
 ) -> None:
-    fig, ax = plt.subplots(figsize=(10, 5), facecolor=_SURFACE)
-    _style_axes(ax)
+    fig, (ax_equity, ax_drawdown) = plt.subplots(
+        2,
+        1,
+        figsize=(10, 7),
+        facecolor=_SURFACE,
+        sharex=True,
+        gridspec_kw={"height_ratios": [2, 1]},
+    )
+    _style_axes(ax_equity)
+    _style_axes(ax_drawdown)
+
     for (label, history), color in zip(
         series.items(), itertools.cycle(_SERIES_COLORS), strict=False
     ):
         timestamps, values = zip(*history, strict=True)
-        ax.plot(timestamps, values, color=color, linewidth=2, label=label)
-    ax.set_title("Equity Curve", color=_INK, fontsize=12, loc="left")
-    ax.set_ylabel("Portfolio value ($)", color=_MUTED, fontsize=9)
+        ax_equity.plot(timestamps, values, color=color, linewidth=2, label=label)
+
+        peak = values[0]
+        drawdowns: list[float] = []
+        for value in values:
+            peak = max(peak, value)
+            drawdowns.append(value / peak - 1)
+        ax_drawdown.plot(timestamps, drawdowns, color=color, linewidth=2)
+        ax_drawdown.fill_between(timestamps, drawdowns, 0, color=color, alpha=0.15, linewidth=0)
+
+    ax_equity.set_title("Equity Curve", color=_INK, fontsize=12, loc="left")
+    ax_equity.set_ylabel("Portfolio value ($)", color=_MUTED, fontsize=9)
     if len(series) > 1:
-        ax.legend(frameon=False, labelcolor=_INK, fontsize=9)
+        ax_equity.legend(frameon=False, labelcolor=_INK, fontsize=9)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    ax_drawdown.set_title("Drawdown", color=_INK, fontsize=12, loc="left")
+    ax_drawdown.set_ylabel("Drawdown", color=_MUTED, fontsize=9)
+    ax_drawdown.yaxis.set_major_formatter(lambda x, _: f"{x:.0%}")
 
-
-def plot_drawdown(mark_to_market_history: Sequence[tuple[datetime, float]], out_path: Path) -> None:
-    timestamps, values = zip(*mark_to_market_history, strict=True)
-
-    peak = values[0]
-    drawdowns: list[float] = []
-    for value in values:
-        peak = max(peak, value)
-        drawdowns.append(value / peak - 1)
-
-    fig, ax = plt.subplots(figsize=(10, 3.5), facecolor=_SURFACE)
-    _style_axes(ax)
-    ax.fill_between(
-        timestamps,
-        drawdowns,
-        0,
-        color=_RED,
-        alpha=0.25,
-        linewidth=0,
-    )
-    ax.plot(timestamps, drawdowns, color=_RED, linewidth=2)
-    ax.set_title("Drawdown", color=_INK, fontsize=12, loc="left")
-    ax.set_ylabel("Drawdown", color=_MUTED, fontsize=9)
-    ax.yaxis.set_major_formatter(lambda x, _: f"{x:.0%}")
-
+    fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
