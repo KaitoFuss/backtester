@@ -1,7 +1,10 @@
+import logging
 from collections.abc import Sequence
 
 from backtester.core.engine import PriceSource
 from backtester.core.events import FillEvent, OrderEvent, SignalEvent, Ticker
+
+logger = logging.getLogger(__name__)
 
 
 class WeightedPortfolio:
@@ -10,22 +13,29 @@ class WeightedPortfolio:
         self._cash = initial_cash
         self._positions: dict[Ticker, int] = {}
 
-    def equity(self) -> float:
-        return self._cash + sum(
-            qty * (self._prices.get_price(ticker) or 0.0) for ticker, qty in self._positions.items()
-        )
+    def mark_to_market(self) -> float:
+        total = self._cash
+        for ticker, qty in self._positions.items():
+            price = self._prices.get_price(ticker)
+            if price is None:
+                logger.warning(
+                    "No price for held position %s (qty=%d); excluding from equity", ticker, qty
+                )
+                continue
+            total += qty * price
+        return total
 
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
-        gross = sum(abs(score) for score in event.scores.values())
-        equity = self.equity()
+        total_abs_score = sum(abs(score) for score in event.scores.values())
+        equity = self.mark_to_market()
 
         orders: list[OrderEvent] = []
         for ticker, score in event.scores.items():
             price = self._prices.get_price(ticker)
-            if price is None or score == 0 or gross == 0:
+            if price is None or score == 0 or total_abs_score == 0:
                 continue
 
-            weight = score / gross
+            weight = score / total_abs_score
             target_shares = round(weight * equity / price)
             delta = target_shares - self._positions.get(ticker, 0)
             if delta == 0:

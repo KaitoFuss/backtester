@@ -2,21 +2,24 @@
 and print first-pass performance metrics.
 
 Usage:
-    uv run scripts/run_backtest.py --data data/raw --tickers AAPL MSFT
+    uv run scripts/run_zscore_backtest.py --data data/raw --tickers AAPL MSFT
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 from backtester.core.engine import Engine
 from backtester.data.parquet_handler import ParquetHandler
-from backtester.execution.simulated import IdealExecutionHandler
-from backtester.portfolio.basic import WeightedPortfolio
+from backtester.execution.ideal import IdealExecutionHandler
+from backtester.portfolio.weighted import WeightedPortfolio
 from backtester.risk.performance import PerformanceTracker
-from backtester.risk.plotting import plot_drawdown, plot_equity_curve
+from backtester.risk.plotting import plot_drawdown, plot_mark_to_market_history
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -27,6 +30,9 @@ def main() -> None:
     parser.add_argument("--initial-cash", type=float, default=100_000.0)
     parser.add_argument("--plot-dir", default="output", help="Directory to write PNG plots to")
     args = parser.parse_args()
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s"
+    )
 
     data_handler = ParquetHandler(Path(args.data), tickers=args.tickers)
     portfolio = WeightedPortfolio(prices=data_handler, initial_cash=args.initial_cash)
@@ -40,23 +46,22 @@ def main() -> None:
         risk_manager=tracker,
     )
 
-    print(f"Running backtest on {args.data} …")
+    logger.info("Running backtest on %s …", args.data)
     engine.run()
 
     metrics = tracker.metrics()
-    print()
-    print("=== Performance ===")
-    print(f"Bars processed:      {len(tracker.equity_curve)}")
-    print(f"Total return:        {metrics.total_return:.2%}")
-    print(f"Annualized return:   {metrics.annualized_return:.2%}")
-    print(f"Annualized vol:      {metrics.annualized_vol:.2%}")
-    print(f"Sharpe (rf=0):       {metrics.sharpe:.2f}")
-    print(f"Max drawdown:        {metrics.max_drawdown:.2%}")
+    logger.info("=== Performance ===")
+    logger.info("Bars processed:      %d", len(tracker.mark_to_market_history))
+    logger.info("Total return:        %s", f"{metrics.total_return:.2%}")
+    logger.info("Annualized return:   %s", f"{metrics.annualized_return:.2%}")
+    logger.info("Annualized vol:      %s", f"{metrics.annualized_vol:.2%}")
+    logger.info("Sharpe (rf=0):       %.2f", metrics.sharpe)
+    logger.info("Max drawdown:        %s", f"{metrics.max_drawdown:.2%}")
 
     plot_dir = Path(args.plot_dir)
-    plot_equity_curve(tracker.equity_curve, plot_dir / "equity_curve.png")
-    plot_drawdown(tracker.equity_curve, plot_dir / "drawdown.png")
-    print(f"\nPlots written to {plot_dir}/")
+    plot_mark_to_market_history(tracker.mark_to_market_history, plot_dir / "equity_curve.png")
+    plot_drawdown(tracker.mark_to_market_history, plot_dir / "drawdown.png")
+    logger.info("Plots written to %s/", plot_dir)
 
 
 if __name__ == "__main__":

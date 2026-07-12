@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime
 
+import pytest
+
 from backtester.core.events import FillEvent, SignalEvent
-from backtester.portfolio.basic import WeightedPortfolio
+from backtester.portfolio.weighted import WeightedPortfolio
 
 TS = datetime(2024, 1, 1)
 
@@ -66,6 +69,26 @@ def test_fill_updates_cash_and_positions() -> None:
     equity = (10_000.0 - 1_000.0 - 1.0) + 10 * 100.0
     target_shares = round(equity / 100.0)
     assert orders[0].quantity == target_shares - 10
+
+
+def test_equity_excludes_position_with_missing_price_and_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(prices=prices, initial_cash=10_000.0)
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="MSFT", quantity=5, direction="BUY", fill_price=50.0)
+    )
+
+    with caplog.at_level(logging.WARNING):
+        equity = portfolio.mark_to_market()
+
+    expected_cash = 10_000.0 - 10 * 100.0 - 5 * 50.0
+    assert equity == expected_cash + 10 * 100.0
+    assert "MSFT" in caplog.text
 
 
 def test_no_order_when_position_already_at_target() -> None:

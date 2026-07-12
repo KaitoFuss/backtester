@@ -1,17 +1,4 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE '(^|[[:space:]|;&])(find|grep)([[:space:]]|$)'; then echo '{\"continue\": false, \"stopReason\": \"Use fff MCP tools instead of Bash find/grep: mcp__fff__find_files, mcp__fff__grep, or mcp__fff__multi_grep\"}'; fi"
-          }
-        ]
-      }
-    ]
-  },
   "permissions": {
     "ask": [
       "Bash(git push --force*)",

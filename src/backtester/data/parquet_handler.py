@@ -33,12 +33,13 @@ class ParquetHandler:
         cols = set(df.columns.tolist())
         bars: dict[str, Bar] = {}
         for ticker, row in df.iterrows():
-            bars[str(ticker)] = Bar(
+            bar = Bar(
                 close=float(row["close"]),
                 open=float(row["open"]) if "open" in cols else None,
                 high=float(row["high"]) if "high" in cols else None,
                 low=float(row["low"]) if "low" in cols else None,
                 volume=float(row["volume"]) if "volume" in cols else None,
             )
-        self._last_price.update({ticker: bar.close for ticker, bar in bars.items()})
+            bars[str(ticker)] = bar
+            self._last_price[str(ticker)] = bar.close
         return MarketEvent(timestamp=timestamp, bars=bars)

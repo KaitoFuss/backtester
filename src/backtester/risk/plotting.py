@@ -24,13 +24,14 @@ def _style_axes(ax: Axes) -> None:
     ax.set_axisbelow(True)
 
 
-def plot_equity_curve(equity_curve: Sequence[tuple[datetime, float]], out_path: Path) -> None:
-    timestamps = [t for t, _ in equity_curve]
-    values = [v for _, v in equity_curve]
+def plot_mark_to_market_history(
+    mark_to_market_history: Sequence[tuple[datetime, float]], out_path: Path
+) -> None:
+    timestamps, values = zip(*mark_to_market_history, strict=True)
 
     fig, ax = plt.subplots(figsize=(10, 5), facecolor=_SURFACE)
     _style_axes(ax)
-    ax.plot(timestamps, values, color=_BLUE, linewidth=2)  # type: ignore[arg-type]
+    ax.plot(timestamps, values, color=_BLUE, linewidth=2)
     ax.set_title("Equity Curve", color=_INK, fontsize=12, loc="left")
     ax.set_ylabel("Portfolio value ($)", color=_MUTED, fontsize=9)
 
@@ -39,9 +40,8 @@ def plot_equity_curve(equity_curve: Sequence[tuple[datetime, float]], out_path: 
     plt.close(fig)
 
 
-def plot_drawdown(equity_curve: Sequence[tuple[datetime, float]], out_path: Path) -> None:
-    timestamps = [t for t, _ in equity_curve]
-    values = [v for _, v in equity_curve]
+def plot_drawdown(mark_to_market_history: Sequence[tuple[datetime, float]], out_path: Path) -> None:
+    timestamps, values = zip(*mark_to_market_history, strict=True)
 
     peak = values[0]
     drawdowns: list[float] = []
@@ -52,14 +52,14 @@ def plot_drawdown(equity_curve: Sequence[tuple[datetime, float]], out_path: Path
     fig, ax = plt.subplots(figsize=(10, 3.5), facecolor=_SURFACE)
     _style_axes(ax)
     ax.fill_between(
-        timestamps,  # type: ignore[arg-type]
+        timestamps,
         drawdowns,
         0,
         color=_RED,
         alpha=0.25,
         linewidth=0,
     )
-    ax.plot(timestamps, drawdowns, color=_RED, linewidth=2)  # type: ignore[arg-type]
+    ax.plot(timestamps, drawdowns, color=_RED, linewidth=2)
     ax.set_title("Drawdown", color=_INK, fontsize=12, loc="left")
     ax.set_ylabel("Drawdown", color=_MUTED, fontsize=9)
     ax.yaxis.set_major_formatter(lambda x, _: f"{x:.0%}")

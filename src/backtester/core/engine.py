@@ -7,15 +7,14 @@ from backtester.core.queue import EventQueue
 
 class DataHandler(Protocol):
     def get_next_bar(self) -> MarketEvent | None: ...
-    def get_price(self, ticker: str) -> float | None: ...
 
 
 class PriceSource(Protocol):
     def get_price(self, ticker: str) -> float | None: ...
 
 
-class EquitySource(Protocol):
-    def equity(self) -> float: ...
+class PortfolioValuer(Protocol):
+    def mark_to_market(self) -> float: ...
 
 
 class Strategy(Protocol):
