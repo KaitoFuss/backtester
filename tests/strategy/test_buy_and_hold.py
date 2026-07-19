@@ -21,7 +21,7 @@ def test_first_bar_buys_all_tickers_at_equal_weight() -> None:
     assert signals[0].scores == {"AAPL": 1.0, "MSFT": 1.0}
 
 
-def test_no_signal_on_subsequent_bars() -> None:
+def test_no_signal_when_no_new_tickers_appear() -> None:
     strategy = BuyAndHoldStrategy()
     strategy.process_market(MarketEvent(timestamp=_ts(0), bars={"AAPL": Bar(close=100.0)}))
 
@@ -30,6 +30,18 @@ def test_no_signal_on_subsequent_bars() -> None:
     )
 
     assert signals == []
+
+
+def test_late_arriving_ticker_triggers_full_universe_resignal() -> None:
+    strategy = BuyAndHoldStrategy()
+    strategy.process_market(MarketEvent(timestamp=_ts(0), bars={"AAPL": Bar(close=100.0)}))
+
+    signals = strategy.process_market(
+        MarketEvent(timestamp=_ts(1), bars={"AAPL": Bar(close=101.0), "MSFT": Bar(close=200.0)})
+    )
+
+    assert len(signals) == 1
+    assert signals[0].scores == {"AAPL": 1.0, "MSFT": 1.0}
 
 
 def test_empty_bars_yields_no_signal() -> None:

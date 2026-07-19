@@ -13,12 +13,6 @@ class PriceSource(Protocol):
     def get_price(self, ticker: str) -> float | None: ...
 
 
-class MarketDataSource(DataHandler, PriceSource, Protocol):
-    """A single object meant to be wired as both the engine's `DataHandler`
-    and a shared `PriceSource` — `get_price` reflects bars already
-    consumed via `get_next_bar`, so all consumers must share one instance."""
-
-
 class PortfolioValuer(Protocol):
     def mark_to_market(self) -> float: ...
 

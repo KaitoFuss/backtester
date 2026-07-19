@@ -27,12 +27,14 @@ class WeightedPortfolio:
 
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
         total_abs_score = sum(abs(score) for score in event.scores.values())
+        if total_abs_score == 0:
+            return []
         equity = self.mark_to_market()
 
         orders: list[OrderEvent] = []
         for ticker, score in event.scores.items():
             price = self._price_source.get_price(ticker)
-            if price is None or score == 0 or total_abs_score == 0:
+            if price is None or score == 0:
                 continue
 
             weight = score / total_abs_score
