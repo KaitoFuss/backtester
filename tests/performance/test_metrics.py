@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 from backtester.core.events import Bar, MarketEvent
-from backtester.risk.performance import PerformanceTracker
+from backtester.performance.metrics import PerformanceTracker
 
 TS = datetime(2024, 1, 1)
 

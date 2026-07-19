@@ -17,23 +17,33 @@ class ParquetMarketData:
     """
 
     def __init__(self, data_dir: Path, tickers: list[str] | None = None) -> None:
-        self._files = sorted(data_dir.glob("*.parquet"))
+        self._files = [
+            (self._parse_timestamp(path), path) for path in sorted(data_dir.glob("*.parquet"))
+        ]
         self._tickers = tickers
         self._index = 0
         self._last_price: dict[str, float] = {}
 
+    @staticmethod
+    def _parse_timestamp(path: Path) -> datetime:
+        try:
+            return datetime.strptime(path.stem, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError(
+                f"Parquet file {path} is not named like a trading day; expected YYYY-MM-DD.parquet"
+            ) from exc
+
     def get_next_bar(self) -> MarketEvent | None:
         if self._index >= len(self._files):
             return None
-        path = self._files[self._index]
+        timestamp, path = self._files[self._index]
         self._index += 1
-        return self._read(path)
+        return self._read(timestamp, path)
 
     def get_price(self, ticker: str) -> float | None:
         return self._last_price.get(ticker)
 
-    def _read(self, path: Path) -> MarketEvent:
-        timestamp = datetime.strptime(path.stem, "%Y-%m-%d")
+    def _read(self, timestamp: datetime, path: Path) -> MarketEvent:
         df: pd.DataFrame = pd.read_parquet(path)
 
         if self._tickers is not None:

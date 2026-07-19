@@ -29,11 +29,9 @@ This is an event-driven backtesting engine for factor-model equity strategies (s
 DataHandler → [MarketEvent] → Strategy → [SignalEvent] → Portfolio → [OrderEvent] → ExecutionHandler → [FillEvent] → Portfolio
 ```
 
-`Engine` (`src/backtester/core/engine.py`) drives this synchronously: it pulls one bar at a time from the `DataHandler`, pushes it onto an in-memory `EventQueue` (`core/queue.py`), then drains the queue via `_dispatch`, which pattern-matches on event type and routes to the corresponding component method (`process_market`, `process_signal`, `process_order`, `process_fill`). A `FillEvent` is also handed to an optional `RiskManager.evaluate_fill` (non-blocking, observer-only) before the portfolio processes it.
+`Engine` (`src/backtester/core/engine.py`) drives this synchronously: it pulls one bar at a time from the `DataHandler`, pushes it onto an in-memory `EventQueue` (`core/queue.py`), then drains the queue via `_dispatch`, which pattern-matches on event type and routes to the corresponding component method (`process_market`, `process_signal`, `process_order`, `process_fill`). `MarketEvent`s and `FillEvent`s are also handed to an optional `RiskManager.evaluate_market`/`evaluate_fill` (non-blocking, observer-only) — currently that slot is occupied by `PerformanceTracker`.
 
-Every component (`DataHandler`, `Strategy`, `Portfolio`, `ExecutionHandler`, `RiskManager`) is a structural `Protocol` defined in `engine.py` itself — concrete implementations live in their own top-level package (`strategy/`, `portfolio/`, `execution/`, `risk/`) and only need to satisfy the shape, not inherit from anything.
-
-**Known gap:** `engine.py`'s `DataHandler` protocol expects `get_next_bar() -> MarketEvent | None`, but `data/base.py`'s `DataHandlerProtocol` (implemented by `ParquetHandler`) is iterator-based (`__iter__`/`__next__`). These were never reconciled — `Engine` cannot yet drive `ParquetHandler` directly.
+Every component (`DataHandler`, `Strategy`, `Portfolio`, `ExecutionHandler`, `RiskManager`) is a structural `Protocol` defined in `engine.py` itself — concrete implementations live in their own top-level package (`strategy/`, `portfolio/`, `execution/`) and only need to satisfy the shape, not inherit from anything. `engine.py` also defines two wiring protocols the `Engine` itself never calls: `PriceSource` (shared pull-based price lookup) and `PortfolioValuer` (mark-to-market, used by performance tracking).
 
 ### Events (`core/events.py`)
 
@@ -41,11 +39,17 @@ All events are frozen dataclasses forming the `Event = MarketEvent | SignalEvent
 
 ### Data layer (`data/`)
 
-`ParquetHandler` reads one Parquet file per trading day from a directory (filename `YYYY-MM-DD.parquet`), tickers as the row index, `close` required and `open`/`high`/`low`/`volume` optional per-file columns. Missing tickers in a given file are silently skipped rather than erroring — the data layer does not validate cross-ticker column consistency.
+`ParquetMarketData` (`data/parquet_market_data.py`) reads one Parquet file per trading day from a directory (filename `YYYY-MM-DD.parquet`, validated fail-fast at construction), tickers as the row index, `close` required and `open`/`high`/`low`/`volume` optional per-file columns. Missing tickers in a given file are silently skipped rather than erroring — the data layer does not validate cross-ticker column consistency. A single instance is wired in twice: as the `Engine`'s `DataHandler` and as the shared `PriceSource` for `Portfolio`/`ExecutionHandler` (its price cache only reflects bars already consumed by the loop). `data/fetch_yfinance.py` downloads daily bars into that layout.
 
-### Still unimplemented
+### Implemented components
 
-`strategy/`, `portfolio/`, `execution/`, `risk/`, and `performance/` packages don't exist yet — only their `Protocol` shapes are defined in `core/engine.py`. See `NOTES.md` sections 4–8 for the open design questions on each (position sizing, slippage/commission model, risk checks, performance metrics).
+- `strategy/`: `ZScoreMovingAverageStrategy` (mean-reversion on z-scored log returns) and `BuyAndHoldStrategy` (equal-weight benchmark).
+- `portfolio/`: `WeightedPortfolio` — sizes positions proportional to signal scores normalized by total absolute score; a score of 0 closes the position, a ticker absent from the signal is held unchanged.
+- `execution/`: `IdealExecutionHandler` — fills at the current cached price, no slippage or commission.
+- `performance/`: `PerformanceTracker` (satisfies the `RiskManager` observer protocol; equity curve + metrics) and `plotting.py` (equity/drawdown charts).
+- `risk/`: empty stub — reserved for actual risk controls (stop-loss, take-profit, max holding period); the observer-only `RiskManager` protocol will need rework to let risk emit orders.
+
+`scripts/run_zscore_backtest.py` shows the full wiring. See `NOTES.md` sections 4–8 for the remaining open design questions (slippage/commission model, risk checks, richer performance metrics).
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
