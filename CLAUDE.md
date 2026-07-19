@@ -44,7 +44,7 @@ All events are frozen dataclasses forming the `Event = MarketEvent | SignalEvent
 ### Implemented components
 
 - `strategy/`: `ZScoreMovingAverageStrategy` (mean-reversion on z-scored log returns) and `BuyAndHoldStrategy` (equal-weight benchmark).
-- `portfolio/`: `WeightedPortfolio` — sizes positions proportional to signal scores normalized by total absolute score; a missing or zero score means hold, not close.
+- `portfolio/`: `WeightedPortfolio` — sizes positions proportional to signal scores normalized by total absolute score; a score of 0 closes the position, a ticker absent from the signal is held unchanged.
 - `execution/`: `IdealExecutionHandler` — fills at the current cached price, no slippage or commission.
 - `performance/`: `PerformanceTracker` (satisfies the `RiskManager` observer protocol; equity curve + metrics) and `plotting.py` (equity/drawdown charts).
 - `risk/`: empty stub — reserved for actual risk controls (stop-loss, take-profit, max holding period); the observer-only `RiskManager` protocol will need rework to let risk emit orders.

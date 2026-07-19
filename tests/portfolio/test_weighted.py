@@ -41,13 +41,40 @@ def test_signal_skips_tickers_with_unknown_price() -> None:
     assert orders == []
 
 
-def test_all_zero_scores_yield_no_orders() -> None:
+def test_zero_score_without_position_yields_no_orders() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
     portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.0}))
 
     assert orders == []
+
+
+def test_zero_score_closes_existing_position() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.0}))
+
+    assert len(orders) == 1
+    assert orders[0].ticker == "AAPL"
+    assert orders[0].direction == "SELL"
+    assert orders[0].quantity == 10
+
+
+def test_absent_ticker_holds_existing_position() -> None:
+    prices = FakePriceSource({"AAPL": 100.0, "MSFT": 200.0})
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="MSFT", quantity=5, direction="BUY", fill_price=200.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0}))
+
+    assert all(o.ticker != "MSFT" for o in orders)
 
 
 def test_fill_updates_cash_and_positions() -> None:

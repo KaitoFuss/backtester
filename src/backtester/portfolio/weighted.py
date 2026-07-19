@@ -11,10 +11,8 @@ class WeightedPortfolio:
     """Sizes positions proportionally to signal scores, normalized by total
     absolute score so gross exposure never exceeds current equity.
 
-    Hold semantics: a ticker absent from a signal's ``scores`` — or present
-    with a score of exactly 0 — keeps its current position untouched. "No
-    signal" means hold, not close; a position only changes via an explicit
-    nonzero score that re-targets it.
+    A score of exactly 0 targets zero shares, closing any existing position.
+    A ticker absent from a signal's ``scores`` is left untouched (hold).
     """
 
     def __init__(self, price_source: PriceSource, initial_cash: float = 100_000.0) -> None:
@@ -36,18 +34,19 @@ class WeightedPortfolio:
 
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
         total_abs_score = sum(abs(score) for score in event.scores.values())
-        if total_abs_score == 0:
-            return []
-        equity = self.mark_to_market()
+        equity = self.mark_to_market() if total_abs_score else 0.0
 
         orders: list[OrderEvent] = []
         for ticker, score in event.scores.items():
             price = self._price_source.get_price(ticker)
-            if price is None or score == 0:
+            if price is None:
                 continue
 
-            weight = score / total_abs_score
-            target_shares = round(weight * equity / price)
+            if score == 0:
+                target_shares = 0
+            else:
+                weight = score / total_abs_score
+                target_shares = round(weight * equity / price)
             delta = target_shares - self._positions.get(ticker, 0)
             if delta == 0:
                 continue
