@@ -22,7 +22,7 @@ def fetch_to_parquet(
 ) -> None:
     """Download OHLCV history and write it out as one .parquet file per day.
 
-    Matches the exact per-day, per-ticker-row shape ParquetHandler reads:
+    Matches the exact per-day, per-ticker-row shape ParquetMarketData reads:
     `close` required, `open`/`high`/`low`/`volume` present only when the
     downloader returned a non-NaN value for that ticker/day (e.g. a ticker
     not yet listed, or delisted, on a given day).

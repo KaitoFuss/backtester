@@ -9,6 +9,14 @@ class DataHandler(Protocol):
     def get_next_bar(self) -> MarketEvent | None: ...
 
 
+class PriceSource(Protocol):
+    def get_price(self, ticker: str) -> float | None: ...
+
+
+class PortfolioValuer(Protocol):
+    def mark_to_market(self) -> float: ...
+
+
 class Strategy(Protocol):
     def process_market(self, event: MarketEvent) -> Sequence[SignalEvent]: ...
 
@@ -23,6 +31,7 @@ class ExecutionHandler(Protocol):
 
 
 class RiskManager(Protocol):
+    def evaluate_market(self, event: MarketEvent) -> None: ...
     def evaluate_fill(self, event: FillEvent) -> None: ...
 
 
@@ -49,6 +58,8 @@ class Engine:
     def _dispatch(self, event: Event) -> None:
         match event:
             case MarketEvent():
+                if self._risk_manager is not None:
+                    self._risk_manager.evaluate_market(event)
                 self._put_all(self._strategy.process_market(event))
             case SignalEvent():
                 self._put_all(self._portfolio.process_signal(event))

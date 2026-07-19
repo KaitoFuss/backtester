@@ -35,3 +35,6 @@ build/
 
 # Local data
 data/
+
+# Generated backtest plots
+output/
