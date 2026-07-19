@@ -96,6 +96,12 @@ def test_none_when_exhausted(data_dir: Path) -> None:
     assert handler.get_next_bar() is None
 
 
+def test_badly_named_file_fails_at_init(data_dir: Path) -> None:
+    _write(data_dir / "notadate.parquet", {"close": [1.0]}, ["AAPL"])
+    with pytest.raises(ValueError, match=r"notadate\.parquet.*YYYY-MM-DD"):
+        ParquetMarketData(data_dir)
+
+
 def test_market_event_type(data_dir: Path) -> None:
     event = ParquetMarketData(data_dir).get_next_bar()
     assert event is not None

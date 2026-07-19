@@ -225,8 +225,14 @@ src/backtester/
 
 ## Decisions Log
 
-_Record choices here as they are made._
-
 | Topic | Decision | Rationale |
 |---|---|---|
-| | | |
+| Abstraction style (§9) | `Protocol`, not ABC; all component protocols live in `core/engine.py` | Structural typing keeps implementations dependency-free and easy to mock |
+| Event loop (§1) | Single synchronous queue, drained fully per bar | Sufficient for daily data; easiest to reason about |
+| Shared state | Pull-based `PriceSource` lookup (one `ParquetMarketData` wired in as both `DataHandler` and `PriceSource`) instead of broadcasting prices to every consumer | One source of truth; cache only reflects consumed bars, preventing look-ahead |
+| Signal granularity (§4) | Strategies emit raw scores per ticker; portfolio derives weights | Keeps sizing policy out of strategies |
+| Position sizing (§5) | Score-proportional weights normalized by total absolute score | Caps gross exposure at 1× equity, long/short symmetric |
+| Hold semantics (§5) | Missing or zero score means hold the existing position, not close it | "No signal" is not a close instruction; closing requires an explicit re-target |
+| Execution (§6) | Market orders filled at current cached close, no slippage/commission yet | Ideal baseline; realistic fill models are additive later |
+| Risk integration (§7) | Observer-only `RiskManager` hook (non-blocking); currently occupied by `PerformanceTracker` | Acting risk controls (stop-loss etc.) will need an order-emitting hook — protocol rework planned |
+| Data validation (§3) | Parquet filenames validated as `YYYY-MM-DD` fail-fast at construction | Stray files error clearly before a backtest runs |

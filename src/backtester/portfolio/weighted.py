@@ -8,6 +8,15 @@ logger = logging.getLogger(__name__)
 
 
 class WeightedPortfolio:
+    """Sizes positions proportionally to signal scores, normalized by total
+    absolute score so gross exposure never exceeds current equity.
+
+    Hold semantics: a ticker absent from a signal's ``scores`` — or present
+    with a score of exactly 0 — keeps its current position untouched. "No
+    signal" means hold, not close; a position only changes via an explicit
+    nonzero score that re-targets it.
+    """
+
     def __init__(self, price_source: PriceSource, initial_cash: float = 100_000.0) -> None:
         self._price_source = price_source
         self._cash = initial_cash
