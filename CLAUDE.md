@@ -29,9 +29,9 @@ This is an event-driven backtesting engine for factor-model equity strategies (s
 DataHandler → [MarketEvent] → Strategy → [SignalEvent] → Portfolio → [OrderEvent] → ExecutionHandler → [FillEvent] → Portfolio
 ```
 
-`Engine` (`src/backtester/core/engine.py`) drives this synchronously: it pulls one bar at a time from the `DataHandler`, pushes it onto an in-memory `EventQueue` (`core/queue.py`), then drains the queue via `_dispatch`, which pattern-matches on event type and routes to the corresponding component method (`process_market`, `process_signal`, `process_order`, `process_fill`). `MarketEvent`s and `FillEvent`s are also handed to an optional `RiskManager.evaluate_market`/`evaluate_fill` (non-blocking, observer-only) — currently that slot is occupied by `PerformanceTracker`.
+`Engine` (`src/backtester/core/engine.py`) drives this synchronously: it pulls one bar at a time from the `DataHandler`, pushes it onto an in-memory `EventQueue` (`core/queue.py`), then drains the queue via `_dispatch`, which pattern-matches on event type and routes to the corresponding component method (`process_market`, `process_signal`, `process_order`, `process_fill`). `MarketEvent`s and `FillEvent`s are also handed to an optional `Observer.evaluate_market`/`evaluate_fill` (non-blocking, no return) — currently that slot is occupied by `PerformanceTracker`. A separate optional `RiskManager` sits alongside it: `on_market` may emit exit orders (e.g. stop-loss), which are executed and settled against the `Portfolio` synchronously — before the `Strategy` acts on that same bar, so it never sizes a trade off a stale position; `on_fill` is a non-blocking bookkeeping hook (no return, cannot emit orders).
 
-Every component (`DataHandler`, `Strategy`, `Portfolio`, `ExecutionHandler`, `RiskManager`) is a structural `Protocol` defined in `engine.py` itself — concrete implementations live in their own top-level package (`strategy/`, `portfolio/`, `execution/`) and only need to satisfy the shape, not inherit from anything. `engine.py` also defines two wiring protocols the `Engine` itself never calls: `PriceSource` (shared pull-based price lookup) and `PortfolioValuer` (mark-to-market, used by performance tracking).
+Every component (`DataHandler`, `Strategy`, `Portfolio`, `ExecutionHandler`, `RiskManager`, `Observer`) is a structural `Protocol` defined in `engine.py` itself — concrete implementations live in their own top-level package (`strategy/`, `portfolio/`, `execution/`) and only need to satisfy the shape, not inherit from anything. `engine.py` also defines two wiring protocols the `Engine` itself never calls: `PriceSource` (shared pull-based price lookup) and `PortfolioValuer` (mark-to-market, used by performance tracking).
 
 ### Events (`core/events.py`)
 
@@ -46,8 +46,8 @@ All events are frozen dataclasses forming the `Event = MarketEvent | SignalEvent
 - `strategy/`: `ZScoreMovingAverageStrategy` (mean-reversion on z-scored log returns) and `BuyAndHoldStrategy` (equal-weight benchmark).
 - `portfolio/`: `WeightedPortfolio` — sizes positions proportional to signal scores normalized by total absolute score; a score of 0 closes the position, a ticker absent from the signal is held unchanged.
 - `execution/`: `IdealExecutionHandler` — fills at the current cached price, no slippage or commission.
-- `performance/`: `PerformanceTracker` (satisfies the `RiskManager` observer protocol; equity curve + metrics) and `plotting.py` (equity/drawdown charts).
-- `risk/`: empty stub — reserved for actual risk controls (stop-loss, take-profit, max holding period); the observer-only `RiskManager` protocol will need rework to let risk emit orders.
+- `performance/`: `PerformanceTracker` (satisfies the `Observer` protocol; equity curve + metrics) and `plotting.py` (equity/drawdown charts).
+- `risk/`: `PositionExitRiskManager` (satisfies the `RiskManager` protocol) — flattens a position on stop-loss, take-profit, or max-holding-days breach; tracks entry price/date/quantity per ticker independently from observed fills rather than depending on `Portfolio` (which doesn't track entry price/date at all).
 
 `scripts/run_zscore_backtest.py` shows the full wiring. See `NOTES.md` sections 4–8 for the remaining open design questions (slippage/commission model, risk checks, richer performance metrics).
 

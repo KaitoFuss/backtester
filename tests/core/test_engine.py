@@ -3,8 +3,8 @@ from datetime import datetime
 
 from backtester.core.engine import (
     Engine,
-    Evaluator,
     ExecutionHandler,
+    Observer,
     Portfolio,
     RiskManager,
     Strategy,
@@ -91,16 +91,15 @@ class RecordingRiskManager:
         self.observed: list[FillEvent] = []
         self.market_events: list[MarketEvent] = []
 
-    def evaluate_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
+    def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
         self.market_events.append(event)
         return []
 
-    def evaluate_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
+    def on_fill(self, event: FillEvent) -> None:
         self.observed.append(event)
-        return []
 
 
-class StubEvaluator:
+class StubObserver:
     def __init__(self) -> None:
         self.observed: list[FillEvent] = []
         self.market_events: list[MarketEvent] = []
@@ -118,7 +117,7 @@ def _make_engine(
     portfolio: Portfolio,
     execution: ExecutionHandler,
     risk_manager: RiskManager | None = None,
-    evaluator: Evaluator | None = None,
+    observer: Observer | None = None,
 ) -> Engine:
     return Engine(
         data_handler=StubDataHandler(bars),
@@ -126,7 +125,7 @@ def _make_engine(
         portfolio=portfolio,
         execution_handler=execution,
         risk_manager=risk_manager,
-        evaluator=evaluator,
+        observer=observer,
     )
 
 
@@ -240,13 +239,12 @@ def test_risk_manager_accumulates_metrics() -> None:
             self.total_commission: float = 0.0
             self.total_slippage: float = 0.0
 
-        def evaluate_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
+        def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
             return []
 
-        def evaluate_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
+        def on_fill(self, event: FillEvent) -> None:
             self.total_commission += event.commission
             self.total_slippage += event.slippage
-            return []
 
     ts2 = datetime(2024, 1, 2)
     bars = [
@@ -269,20 +267,20 @@ def test_engine_runs_without_risk_manager() -> None:
     _make_engine([market], strategy, portfolio, execution).run()
 
 
-def test_risk_manager_and_evaluator_run_independently() -> None:
-    """Both slots can be wired at once: evaluator observes, risk manager still emits."""
+def test_risk_manager_and_observer_run_independently() -> None:
+    """Both slots can be wired at once: observer observes, risk manager still emits."""
     market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
-    risk, evaluator = RecordingRiskManager(), StubEvaluator()
+    risk, observer = RecordingRiskManager(), StubObserver()
 
     _make_engine(
-        [market], strategy, portfolio, execution, risk_manager=risk, evaluator=evaluator
+        [market], strategy, portfolio, execution, risk_manager=risk, observer=observer
     ).run()
 
     assert risk.market_events == [market]
     assert risk.observed[0].ticker == "AAPL"
-    assert evaluator.market_events == [market]
-    assert evaluator.observed[0].ticker == "AAPL"
+    assert observer.market_events == [market]
+    assert observer.observed[0].ticker == "AAPL"
 
 
 class PositionAwarePortfolio:
@@ -305,12 +303,12 @@ class PositionAwarePortfolio:
 
 
 class FlatteningOnSecondBarRiskManager:
-    """Emits a flattening SELL the second time evaluate_market is called."""
+    """Emits a flattening SELL the second time on_market is called."""
 
     def __init__(self) -> None:
         self._calls = 0
 
-    def evaluate_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
+    def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
         self._calls += 1
         if self._calls == 2:
             return [
@@ -318,8 +316,8 @@ class FlatteningOnSecondBarRiskManager:
             ]
         return []
 
-    def evaluate_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
-        return []
+    def on_fill(self, event: FillEvent) -> None:
+        pass
 
 
 def test_risk_manager_order_settles_before_next_bar_signal() -> None:

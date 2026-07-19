@@ -55,7 +55,7 @@ def _run_backtest(
         portfolio=portfolio,
         execution_handler=IdealExecutionHandler(price_source=market_data),
         risk_manager=risk_manager,
-        evaluator=tracker,
+        observer=tracker,
     )
     engine.run()
     return tracker

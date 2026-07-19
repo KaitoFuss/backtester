@@ -31,11 +31,11 @@ class ExecutionHandler(Protocol):
 
 
 class RiskManager(Protocol):
-    def evaluate_market(self, event: MarketEvent) -> Sequence[OrderEvent]: ...
-    def evaluate_fill(self, event: FillEvent) -> Sequence[OrderEvent]: ...
+    def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]: ...
+    def on_fill(self, event: FillEvent) -> None: ...
 
 
-class Evaluator(Protocol):
+class Observer(Protocol):
     def evaluate_market(self, event: MarketEvent) -> None: ...
     def evaluate_fill(self, event: FillEvent) -> None: ...
 
@@ -48,47 +48,53 @@ class Engine:
         portfolio: Portfolio,
         execution_handler: ExecutionHandler,
         risk_manager: RiskManager | None = None,
-        evaluator: Evaluator | None = None,
+        observer: Observer | None = None,
     ) -> None:
         self._data_handler = data_handler
         self._strategy = strategy
         self._portfolio = portfolio
         self._execution_handler = execution_handler
         self._risk_manager = risk_manager
-        self._evaluator = evaluator
+        self._observer = observer
         self._queue = EventQueue()
 
     def _put_all(self, events: Sequence[Event]) -> None:
         for e in events:
             self._queue.put(e)
 
-    def _settle_order(self, order: OrderEvent) -> None:
-        for fill in self._execution_handler.process_order(order):
-            self._process_fill(fill)
-
-    def _process_fill(self, fill: FillEvent) -> None:
-        if self._evaluator is not None:
-            self._evaluator.evaluate_fill(fill)
+    def _handle_market(self, event: MarketEvent) -> None:
+        if self._observer is not None:
+            self._observer.evaluate_market(event)
         if self._risk_manager is not None:
-            for order in self._risk_manager.evaluate_fill(fill):
-                self._settle_order(order)
-        self._put_all(self._portfolio.process_fill(fill))
+            for order in self._risk_manager.on_market(event):
+                self._execute_immediately(order)
+        self._put_all(self._strategy.process_market(event))
+
+    def _execute_immediately(self, order: OrderEvent) -> None:
+        """Runs an order to completion right now (order -> fill -> portfolio
+        update), bypassing the queue, so a risk-driven exit is fully resolved
+        before the strategy or anything else acts on this bar."""
+        for fill in self._execution_handler.process_order(order):
+            if self._observer is not None:
+                self._observer.evaluate_fill(fill)
+            if self._risk_manager is not None:
+                self._risk_manager.on_fill(fill)
+            self._put_all(self._portfolio.process_fill(fill))
 
     def _dispatch(self, event: Event) -> None:
         match event:
             case MarketEvent():
-                if self._evaluator is not None:
-                    self._evaluator.evaluate_market(event)
-                if self._risk_manager is not None:
-                    for order in self._risk_manager.evaluate_market(event):
-                        self._settle_order(order)
-                self._put_all(self._strategy.process_market(event))
+                self._handle_market(event)
             case SignalEvent():
                 self._put_all(self._portfolio.process_signal(event))
             case OrderEvent():
                 self._put_all(self._execution_handler.process_order(event))
             case FillEvent():
-                self._process_fill(event)
+                if self._observer is not None:
+                    self._observer.evaluate_fill(event)
+                if self._risk_manager is not None:
+                    self._risk_manager.on_fill(event)
+                self._put_all(self._portfolio.process_fill(event))
             case _:
                 raise NotImplementedError(f"unhandled event type: {event!r}")
 

@@ -24,9 +24,9 @@ def _market(timestamp: datetime, ticker: str = "AAPL", close: float = 100.0) -> 
 
 def test_stop_loss_triggers_flattening_order() -> None:
     risk = PositionExitRiskManager(stop_loss_pct=0.05)
-    risk.evaluate_fill(_fill(direction="BUY", price=100.0))
+    risk.on_fill(_fill(direction="BUY", price=100.0))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=1), close=94.0))
+    orders = risk.on_market(_market(TS + timedelta(days=1), close=94.0))
 
     assert len(orders) == 1
     assert orders[0].direction == "SELL"
@@ -35,9 +35,9 @@ def test_stop_loss_triggers_flattening_order() -> None:
 
 def test_take_profit_triggers_flattening_order() -> None:
     risk = PositionExitRiskManager(take_profit_pct=0.10)
-    risk.evaluate_fill(_fill(direction="BUY", price=100.0))
+    risk.on_fill(_fill(direction="BUY", price=100.0))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=1), close=111.0))
+    orders = risk.on_market(_market(TS + timedelta(days=1), close=111.0))
 
     assert len(orders) == 1
     assert orders[0].direction == "SELL"
@@ -46,9 +46,9 @@ def test_take_profit_triggers_flattening_order() -> None:
 
 def test_max_holding_days_triggers_flattening_order() -> None:
     risk = PositionExitRiskManager(max_holding_days=5)
-    risk.evaluate_fill(_fill(direction="BUY", price=100.0))
+    risk.on_fill(_fill(direction="BUY", price=100.0))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=6), close=100.0))
+    orders = risk.on_market(_market(TS + timedelta(days=6), close=100.0))
 
     assert len(orders) == 1
     assert orders[0].direction == "SELL"
@@ -57,36 +57,36 @@ def test_max_holding_days_triggers_flattening_order() -> None:
 
 def test_no_trigger_within_bounds() -> None:
     risk = PositionExitRiskManager(stop_loss_pct=0.05, take_profit_pct=0.10, max_holding_days=5)
-    risk.evaluate_fill(_fill(direction="BUY", price=100.0))
+    risk.on_fill(_fill(direction="BUY", price=100.0))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=1), close=101.0))
+    orders = risk.on_market(_market(TS + timedelta(days=1), close=101.0))
 
     assert orders == []
 
 
 def test_disabled_checks_via_none_never_trigger() -> None:
     risk = PositionExitRiskManager(stop_loss_pct=None, take_profit_pct=None, max_holding_days=None)
-    risk.evaluate_fill(_fill(direction="BUY", price=100.0))
+    risk.on_fill(_fill(direction="BUY", price=100.0))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=1000), close=1.0))
+    orders = risk.on_market(_market(TS + timedelta(days=1000), close=1.0))
 
     assert orders == []
 
 
 def test_missing_ticker_in_bar_is_skipped() -> None:
     risk = PositionExitRiskManager(stop_loss_pct=0.01)
-    risk.evaluate_fill(_fill(ticker="AAPL", direction="BUY", price=100.0))
+    risk.on_fill(_fill(ticker="AAPL", direction="BUY", price=100.0))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=1), ticker="MSFT", close=1.0))
+    orders = risk.on_market(_market(TS + timedelta(days=1), ticker="MSFT", close=1.0))
 
     assert orders == []
 
 
 def test_short_position_stop_loss_direction() -> None:
     risk = PositionExitRiskManager(stop_loss_pct=0.05)
-    risk.evaluate_fill(_fill(direction="SELL", price=100.0))
+    risk.on_fill(_fill(direction="SELL", price=100.0))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=1), close=106.0))
+    orders = risk.on_market(_market(TS + timedelta(days=1), close=106.0))
 
     assert len(orders) == 1
     assert orders[0].direction == "BUY"
@@ -95,20 +95,20 @@ def test_short_position_stop_loss_direction() -> None:
 
 def test_state_cleared_after_position_closes() -> None:
     risk = PositionExitRiskManager(stop_loss_pct=0.05)
-    risk.evaluate_fill(_fill(direction="BUY", price=100.0))
-    risk.evaluate_fill(_fill(direction="SELL", price=100.0))
+    risk.on_fill(_fill(direction="BUY", price=100.0))
+    risk.on_fill(_fill(direction="SELL", price=100.0))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=1), close=1.0))
+    orders = risk.on_market(_market(TS + timedelta(days=1), close=1.0))
 
     assert orders == []
 
 
 def test_resize_keeps_original_entry_price() -> None:
     risk = PositionExitRiskManager(stop_loss_pct=0.05)
-    risk.evaluate_fill(_fill(direction="BUY", price=100.0, quantity=10))
-    risk.evaluate_fill(_fill(direction="BUY", price=200.0, quantity=10))
+    risk.on_fill(_fill(direction="BUY", price=100.0, quantity=10))
+    risk.on_fill(_fill(direction="BUY", price=200.0, quantity=10))
 
-    orders = risk.evaluate_market(_market(TS + timedelta(days=1), close=94.0))
+    orders = risk.on_market(_market(TS + timedelta(days=1), close=94.0))
 
     assert len(orders) == 1
     assert orders[0].quantity == 20

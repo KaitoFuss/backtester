@@ -23,6 +23,11 @@ class PositionExitRiskManager:
     Each threshold is disabled by passing ``None``. When multiple thresholds
     are configured and more than one is breached on the same bar, stop-loss is
     checked first, then take-profit, then max-holding-days.
+
+    Position tracking is intentionally independent of ``Portfolio`` — this
+    class only implements the structural ``RiskManager`` protocol, which has
+    no dependency on any concrete portfolio implementation, and a portfolio
+    isn't guaranteed to expose entry price/date at all.
     """
 
     def __init__(
@@ -36,7 +41,7 @@ class PositionExitRiskManager:
         self._max_holding_days = max_holding_days
         self._entries: dict[Ticker, _PositionEntry] = {}
 
-    def evaluate_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
+    def on_fill(self, event: FillEvent) -> None:
         signed_delta = event.quantity if event.direction == "BUY" else -event.quantity
         prior = self._entries.get(event.ticker)
         prior_qty = prior.signed_qty if prior is not None else 0
@@ -50,9 +55,8 @@ class PositionExitRiskManager:
             )
         else:
             self._entries[event.ticker] = replace(prior, signed_qty=new_qty)
-        return []
 
-    def evaluate_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
+    def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
         orders: list[OrderEvent] = []
         for ticker, entry in list(self._entries.items()):
             bar = event.bars.get(ticker)
