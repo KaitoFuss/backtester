@@ -11,14 +11,26 @@ class WeightedPortfolio:
     """Sizes positions proportionally to signal scores, normalized by total
     absolute score so gross exposure never exceeds current equity.
 
-    A score of exactly 0 targets zero shares, closing any existing position.
+    Positions move through discrete flat -> open -> flat cycles rather than
+    resizing every bar: a flat ticker opens only once ``abs(score)`` reaches
+    ``entry_threshold``, sized once from the current signal; an open position
+    is held unchanged (no resizing) until it closes, which happens when the
+    score's sign flips, drops below ``exit_threshold``, or is exactly 0.
     A ticker absent from a signal's ``scores`` is left untouched (hold).
     """
 
-    def __init__(self, price_source: PriceSource, initial_cash: float = 100_000.0) -> None:
+    def __init__(
+        self,
+        price_source: PriceSource,
+        initial_cash: float = 100_000.0,
+        entry_threshold: float = 0.0,
+        exit_threshold: float = 0.0,
+    ) -> None:
         self._price_source = price_source
         self._cash = initial_cash
         self._positions: dict[Ticker, int] = {}
+        self._entry_threshold = entry_threshold
+        self._exit_threshold = exit_threshold
 
     def mark_to_market(self) -> float:
         total = self._cash
@@ -44,8 +56,22 @@ class WeightedPortfolio:
 
             # `or 1.0` keeps an all-zero signal at weight 0 instead of dividing 0/0
             weight = score / (total_abs_score or 1.0)
-            target_shares = round(weight * equity / price)
-            delta = target_shares - self._positions.get(ticker, 0)
+            current_qty = self._positions.get(ticker, 0)
+
+            if current_qty == 0:
+                if score == 0 or abs(score) < self._entry_threshold:
+                    continue
+                delta = round(weight * equity / price)
+            else:
+                held_sign = 1 if current_qty > 0 else -1
+                score_sign = (score > 0) - (score < 0)
+                should_close = (
+                    score == 0 or score_sign != held_sign or abs(score) < self._exit_threshold
+                )
+                if not should_close:
+                    continue
+                delta = -current_qty
+
             if delta == 0:
                 continue
 

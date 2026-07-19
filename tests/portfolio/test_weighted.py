@@ -92,10 +92,7 @@ def test_fill_updates_cash_and_positions() -> None:
         )
     )
 
-    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0}))
-    equity = (10_000.0 - 1_000.0 - 1.0) + 10 * 100.0
-    target_shares = round(equity / 100.0)
-    assert orders[0].quantity == target_shares - 10
+    assert portfolio.mark_to_market() == 10_000.0 - 1_000.0 - 1.0 + 10 * 100.0
 
 
 def test_equity_excludes_position_with_missing_price_and_logs_warning(
@@ -118,7 +115,7 @@ def test_equity_excludes_position_with_missing_price_and_logs_warning(
     assert "MSFT" in caplog.text
 
 
-def test_no_order_when_position_already_at_target() -> None:
+def test_no_resize_while_held_even_with_stronger_same_sign_score() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
     portfolio = WeightedPortfolio(price_source=prices, initial_cash=100.0)
 
@@ -129,3 +126,69 @@ def test_no_order_when_position_already_at_target() -> None:
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0}))
 
     assert orders == []
+
+
+def test_entry_threshold_blocks_weak_signal_when_flat() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0, entry_threshold=0.5)
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.4}))
+
+    assert orders == []
+
+
+def test_entry_threshold_opens_position_once_crossed() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0, entry_threshold=0.5)
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.6}))
+
+    assert len(orders) == 1
+    assert orders[0].direction == "BUY"
+    assert orders[0].quantity == round(1.0 * 10_000.0 / 100.0)
+
+
+def test_no_resize_while_held_with_banding_enabled() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.9}))
+
+    assert orders == []
+
+
+def test_exit_threshold_closes_on_weak_signal() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.1}))
+
+    assert len(orders) == 1
+    assert orders[0].direction == "SELL"
+    assert orders[0].quantity == 10
+
+
+def test_sign_flip_closes_position_even_above_exit_threshold() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": -0.9}))
+
+    assert len(orders) == 1
+    assert orders[0].direction == "SELL"
+    assert orders[0].quantity == 10
