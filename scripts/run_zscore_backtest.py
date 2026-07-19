@@ -14,7 +14,7 @@ from pathlib import Path
 from backtester.core.engine import Engine, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
-from backtester.performance.performance import PerformanceTracker
+from backtester.performance.metrics import PerformanceTracker
 from backtester.performance.plotting import plot_equity_curve
 from backtester.portfolio.weighted import WeightedPortfolio
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
