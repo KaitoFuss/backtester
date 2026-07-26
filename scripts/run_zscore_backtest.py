@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
-from backtester.core.engine import Engine, Strategy
+from backtester.core.engine import Engine, PriceSource, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
+from backtester.portfolio.equal_weight import EqualWeightPortfolio
 from backtester.portfolio.vol_weighted import VolWeightedPortfolio
 from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
@@ -24,28 +26,20 @@ from backtester.tracker.plotting import plot_equity_curve
 logger = logging.getLogger(__name__)
 
 
+PortfolioFactory = Callable[[PriceSource], EqualWeightPortfolio | VolWeightedPortfolio]
+
+
 def _run_backtest(
     data_dir: Path,
     tickers: list[str] | None,
     strategy: Strategy,
-    initial_cash: float,
-    entry_threshold: float,
-    exit_threshold: float,
-    vol_window: int,
-    max_gross: float,
+    portfolio_factory: PortfolioFactory,
     stop_loss_pct: float | None,
     take_profit_pct: float | None,
     max_holding_days: int | None,
 ) -> PerformanceTracker:
     market_data = ParquetMarketData(data_dir, tickers=tickers)
-    portfolio = VolWeightedPortfolio(
-        price_source=market_data,
-        initial_cash=initial_cash,
-        entry_threshold=entry_threshold,
-        exit_threshold=exit_threshold,
-        vol_window=vol_window,
-        max_gross=max_gross,
-    )
+    portfolio = portfolio_factory(market_data)
     tracker = PerformanceTracker(portfolio=portfolio)
     risk_manager = PositionExitRiskManager(
         portfolio=portfolio,
@@ -99,6 +93,12 @@ def main() -> None:
         help="Leverage limit: gross exposure as a multiple of equity (1.0 = fully invested)",
     )
     parser.add_argument(
+        "--target-vol",
+        type=float,
+        default=0.2,
+        help="Target annualized vol contribution per unit conviction (vol-weighted strategy only)",
+    )
+    parser.add_argument(
         "--winsor-limit", type=float, default=3.0, help="Clip the z-score signal to +/- this"
     )
     parser.add_argument("--stop-loss-pct", type=float, default=None)
@@ -116,11 +116,7 @@ def main() -> None:
     data_dir = Path(args.data)
 
     logger.info("Running backtest on %s …", data_dir)
-    run_kwargs = {
-        "entry_threshold": args.entry_threshold,
-        "exit_threshold": args.exit_threshold,
-        "vol_window": args.vol_window,
-        "max_gross": args.max_gross,
+    risk_kwargs = {
         "stop_loss_pct": args.stop_loss_pct,
         "take_profit_pct": args.take_profit_pct,
         "max_holding_days": args.max_holding_days,
@@ -129,11 +125,25 @@ def main() -> None:
         data_dir,
         args.tickers,
         ZScoreMovingAverageStrategy(window=args.window, winsor_limit=args.winsor_limit),
-        args.initial_cash,
-        **run_kwargs,
+        lambda price_source: VolWeightedPortfolio(
+            price_source=price_source,
+            initial_cash=args.initial_cash,
+            entry_threshold=args.entry_threshold,
+            exit_threshold=args.exit_threshold,
+            vol_window=args.vol_window,
+            max_gross=args.max_gross,
+            target_vol=args.target_vol,
+        ),
+        **risk_kwargs,
     )
     benchmark_tracker = _run_backtest(
-        data_dir, args.tickers, BuyAndHoldStrategy(), args.initial_cash, **run_kwargs
+        data_dir,
+        args.tickers,
+        BuyAndHoldStrategy(),
+        lambda price_source: EqualWeightPortfolio(
+            price_source=price_source, initial_cash=args.initial_cash, max_gross=args.max_gross
+        ),
+        **risk_kwargs,
     )
 
     _log_metrics("Strategy", strategy_tracker)

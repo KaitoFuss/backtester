@@ -1,7 +1,4 @@
 import logging
-import math
-import statistics
-from collections import deque
 from collections.abc import Sequence
 from dataclasses import replace
 
@@ -10,33 +7,20 @@ from backtester.core.events import FillEvent, OrderEvent, Position, SignalEvent,
 
 logger = logging.getLogger(__name__)
 
-TRADING_DAYS_PER_YEAR = 252
 
+class EqualWeightPortfolio:
+    """Default, no-frills portfolio: opens positions in proportion to signal
+    score (``score / total abs score``), normalized into the gross exposure
+    still available under ``max_gross``. No vol estimate is required, so a
+    position opens on the same bar its score first qualifies — this is the
+    reference portfolio for strategies like ``BuyAndHoldStrategy`` that need to
+    invest immediately rather than wait out a vol warm-up window.
 
-class VolWeightedPortfolio:
-    """Opens long/short positions sized by conviction times a target risk
-    contribution per unit vol.
-
-    A ticker's raw weight is ``score * target_vol / sigma`` (its trailing
-    annualized return vol): the signal magnitude and sign is conviction and
-    direction, and ``target_vol / sigma`` scales that into a weight sized so a
-    unit-conviction position on this name contributes roughly ``target_vol`` of
-    risk. A candidate without a full ``vol_window`` of returns yet is skipped
-    for the bar (no fallback) rather than guessed at. The batch of new opens is
-    then capped — never scaled up, only down — to fit within the gross exposure
-    still available under ``max_gross``, the leverage limit (gross exposure as
-    a multiple of equity; ``1.0`` = fully invested, ``2.0`` = up to 2x
-    long/short). Cash is tracked as an accounting balance but is not itself a
-    sizing constraint; the leverage cap is.
-
-    Positions move through discrete flat -> open -> flat cycles rather than
-    resizing every bar: a flat ticker opens only once ``abs(score)`` reaches
-    ``entry_threshold``, sized once from the current signal; an open position is
-    held unchanged until it closes, which happens when the score's sign flips,
-    drops below ``exit_threshold``, or is exactly 0. A ticker absent from a
-    signal's ``scores`` is left untouched (hold). Because held positions are
-    never resized, new opens may only claim the gross budget those positions
-    leave free under ``max_gross``.
+    Positions move through the same flat -> open -> flat cycle as
+    ``VolWeightedPortfolio``: a flat ticker opens only once ``abs(score)``
+    reaches ``entry_threshold``; an open position is held unchanged until a
+    sign flip, a sub-``exit_threshold`` score, or a zero score closes it. A
+    ticker absent from a signal's ``scores`` is left untouched (hold).
     """
 
     def __init__(
@@ -45,20 +29,14 @@ class VolWeightedPortfolio:
         initial_cash: float = 100_000.0,
         entry_threshold: float = 0.0,
         exit_threshold: float = 0.0,
-        vol_window: int = 20,
         max_gross: float = 1.0,
-        target_vol: float = 0.2,
     ) -> None:
         self._price_source = price_source
         self._cash = initial_cash
         self._positions: dict[Ticker, Position] = {}
         self._entry_threshold = entry_threshold
         self._exit_threshold = exit_threshold
-        self._vol_window = vol_window
         self._max_gross = max_gross
-        self._target_vol = target_vol
-        self._returns: dict[Ticker, deque[float]] = {}
-        self._last_price: dict[Ticker, float] = {}
 
     def get_position(self, ticker: str) -> Position | None:
         return self._positions.get(ticker)
@@ -77,27 +55,7 @@ class VolWeightedPortfolio:
             total += position.quantity * price
         return total
 
-    def _record_returns_for_vol(self, tickers: set[Ticker]) -> None:
-        """Append each ticker's latest log return to its trailing window, giving
-        ``annualized_vol`` the history it works from. ``Bar`` guarantees prices
-        are positive, so the only bar skipped is a ticker's first observation
-        (no prior price to diff against)."""
-        for ticker in tickers:
-            price = self._price_source.get_price(ticker)
-            if price is None:
-                continue
-            prev = self._last_price.get(ticker)
-            self._last_price[ticker] = price
-            if prev is not None:
-                returns = self._returns.setdefault(ticker, deque(maxlen=self._vol_window))
-                returns.append(math.log(price / prev))
-
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
-        # Update returns for tickers in this signal AND ones we currently hold,
-        # so held names keep a live vol estimate on bars where they're absent
-        # from `scores` (the `| set(...)` unions both ticker sets).
-        tracked_tickers = set(event.scores) | set(self._positions)
-        self._record_returns_for_vol(tracked_tickers)
         equity = self.mark_to_market()
 
         orders: list[OrderEvent] = []
@@ -138,21 +96,8 @@ class VolWeightedPortfolio:
         if not candidates or equity <= 0:
             return []
 
-        # Signed conviction (score) scaled to a target risk contribution per
-        # unit vol; a candidate without a ready vol estimate is skipped.
-        candidate_vols: dict[Ticker, float] = {}
-        for ticker, _, _ in candidates:
-            vol = annualized_vol(self._returns.get(ticker), self._vol_window)
-            if vol is not None:
-                candidate_vols[ticker] = vol
-
-        raw = {
-            ticker: score * self._target_vol / candidate_vols[ticker]
-            for ticker, score, _ in candidates
-            if ticker in candidate_vols
-        }
-        total_abs_raw = sum(abs(r) for r in raw.values())
-        if total_abs_raw == 0.0:
+        total_abs_score = sum(abs(score) for _, score, _ in candidates)
+        if total_abs_score == 0.0:
             return []
 
         # Held positions are never resized, so new opens may only use the gross
@@ -166,15 +111,10 @@ class VolWeightedPortfolio:
         if available == 0.0:
             return []
 
-        # target_vol sets each name's target size directly; only scale the
-        # whole batch down if it would breach the budget, never up to fill it.
-        scale = min(1.0, available / total_abs_raw)
-
         orders: list[OrderEvent] = []
-        for ticker, _, price in candidates:
-            if ticker not in raw:
-                continue
-            qty = round(raw[ticker] * scale * equity / price)
+        for ticker, score, price in candidates:
+            weight = score / total_abs_score * available
+            qty = round(weight * equity / price)
             if qty == 0:
                 continue
             orders.append(
@@ -208,14 +148,3 @@ class VolWeightedPortfolio:
         else:
             # Adding to an existing position keeps its original entry price/date.
             self._positions[event.ticker] = replace(prior, quantity=new_qty)
-
-
-def annualized_vol(returns: deque[float] | None, window: int) -> float | None:
-    """Annualized stdev of a trailing return window, or ``None`` until the
-    window is full or when the sample has no dispersion."""
-    if returns is None or len(returns) < window:
-        return None
-    stdev = statistics.stdev(returns)
-    if stdev == 0:
-        return None
-    return stdev * math.sqrt(TRADING_DAYS_PER_YEAR)
