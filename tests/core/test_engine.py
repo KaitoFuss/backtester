@@ -9,7 +9,7 @@ from backtester.core.engine import (
     Strategy,
     Tracker,
 )
-from backtester.core.events import Bar, FillEvent, MarketEvent, OrderEvent, SignalEvent
+from backtester.core.events import Bar, FillEvent, MarketEvent, OrderEvent, Position, SignalEvent
 
 TS = datetime(2024, 1, 1)
 BAR = Bar(close=150.0)
@@ -59,6 +59,12 @@ class StubPortfolio:
 
     def process_fill(self, event: FillEvent) -> None:
         self.fills.append(event)
+
+    def get_position(self, ticker: str) -> Position | None:
+        return None
+
+    def mark_to_market(self) -> float:
+        return 0.0
 
 
 class StubExecutionHandler:

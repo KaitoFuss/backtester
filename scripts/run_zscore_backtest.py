@@ -12,7 +12,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from backtester.core.engine import Engine, PriceSource, Strategy
+from backtester.core.engine import Engine, Portfolio, PriceSource, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
 from backtester.portfolio.equal_weight import EqualWeightPortfolio
@@ -26,7 +26,7 @@ from backtester.tracker.plotting import plot_equity_curve
 logger = logging.getLogger(__name__)
 
 
-PortfolioFactory = Callable[[PriceSource], EqualWeightPortfolio | VolWeightedPortfolio]
+PortfolioFactory = Callable[[PriceSource], Portfolio]
 
 
 def _run_backtest(
