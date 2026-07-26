@@ -15,9 +15,7 @@ from backtester.core.engine import Engine, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
 from backtester.portfolio.vol_weighted import VolWeightedPortfolio
-from backtester.risk.chain import ChainedRiskManager
 from backtester.risk.exits import PositionExitRiskManager
-from backtester.risk.leverage import LeverageRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
 from backtester.tracker.metrics import PerformanceTracker
@@ -49,16 +47,11 @@ def _run_backtest(
         max_gross=max_gross,
     )
     tracker = PerformanceTracker(portfolio=portfolio)
-    risk_manager = ChainedRiskManager(
-        [
-            PositionExitRiskManager(
-                portfolio=portfolio,
-                stop_loss_pct=stop_loss_pct,
-                take_profit_pct=take_profit_pct,
-                max_holding_days=max_holding_days,
-            ),
-            LeverageRiskManager(portfolio=portfolio, max_gross=max_gross),
-        ]
+    risk_manager = PositionExitRiskManager(
+        portfolio=portfolio,
+        stop_loss_pct=stop_loss_pct,
+        take_profit_pct=take_profit_pct,
+        max_holding_days=max_holding_days,
     )
 
     engine = Engine(
