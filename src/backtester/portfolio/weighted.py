@@ -63,7 +63,7 @@ class WeightedPortfolio:
             # `or 1.0` keeps an all-zero signal at weight 0 instead of dividing 0/0
             weight = score / (total_abs_score or 1.0)
             position = self._positions.get(ticker)
-            current_qty = position.quantity if position is not None else 0
+            current_qty = position.quantity if position else 0
 
             if current_qty == 0:
                 if score == 0 or abs(score) < self._entry_threshold:

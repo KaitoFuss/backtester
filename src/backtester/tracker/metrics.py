@@ -2,7 +2,7 @@ import statistics
 from dataclasses import dataclass
 from datetime import datetime
 
-from backtester.core.engine import PortfolioValuer
+from backtester.core.engine import PortfolioView
 from backtester.core.events import FillEvent, MarketEvent
 
 TRADING_DAYS_PER_YEAR = 252
@@ -31,14 +31,14 @@ def _max_drawdown(values: list[float]) -> float:
 
 
 class PerformanceTracker:
-    def __init__(self, portfolio: PortfolioValuer) -> None:
+    def __init__(self, portfolio: PortfolioView) -> None:
         self._portfolio = portfolio
         self._mark_to_market_history: list[tuple[datetime, float]] = []
 
-    def evaluate_market(self, event: MarketEvent) -> None:
+    def track_market(self, event: MarketEvent) -> None:
         self._mark_to_market_history.append((event.timestamp, self._portfolio.mark_to_market()))
 
-    def evaluate_fill(self, event: FillEvent) -> None:
+    def track_fill(self, event: FillEvent) -> None:
         # Reserved for fill-level stats the mark-to-market history can't derive on its own:
         # trade count, win rate, slippage/commission drag, turnover.
         pass

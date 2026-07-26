@@ -14,12 +14,12 @@ from pathlib import Path
 from backtester.core.engine import Engine, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
-from backtester.performance.metrics import PerformanceTracker
-from backtester.performance.plotting import plot_equity_curve
 from backtester.portfolio.weighted import WeightedPortfolio
 from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
+from backtester.tracker.metrics import PerformanceTracker
+from backtester.tracker.plotting import plot_equity_curve
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def _run_backtest(
     )
     tracker = PerformanceTracker(portfolio=portfolio)
     risk_manager = PositionExitRiskManager(
-        position_source=portfolio,
+        portfolio=portfolio,
         stop_loss_pct=stop_loss_pct,
         take_profit_pct=take_profit_pct,
         max_holding_days=max_holding_days,
@@ -56,7 +56,7 @@ def _run_backtest(
         portfolio=portfolio,
         execution_handler=IdealExecutionHandler(price_source=market_data),
         risk_manager=risk_manager,
-        observer=tracker,
+        tracker=tracker,
     )
     engine.run()
     return tracker

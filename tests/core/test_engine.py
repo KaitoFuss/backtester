@@ -4,10 +4,10 @@ from datetime import datetime
 from backtester.core.engine import (
     Engine,
     ExecutionHandler,
-    Observer,
     Portfolio,
     RiskManager,
     Strategy,
+    Tracker,
 )
 from backtester.core.events import Bar, FillEvent, MarketEvent, OrderEvent, SignalEvent
 
@@ -37,9 +37,9 @@ class StubStrategy:
     def __init__(self) -> None:
         self.received: list[MarketEvent] = []
 
-    def process_market(self, event: MarketEvent) -> Sequence[SignalEvent]:
+    def process_market(self, event: MarketEvent) -> SignalEvent:
         self.received.append(event)
-        return [SignalEvent(timestamp=event.timestamp, scores=dict.fromkeys(event.bars, 1.0))]
+        return SignalEvent(timestamp=event.timestamp, scores=dict.fromkeys(event.bars, 1.0))
 
 
 class StubPortfolio:
@@ -99,15 +99,15 @@ class RecordingRiskManager:
         return orders
 
 
-class StubObserver:
+class StubTracker:
     def __init__(self) -> None:
         self.observed: list[FillEvent] = []
         self.market_events: list[MarketEvent] = []
 
-    def evaluate_market(self, event: MarketEvent) -> None:
+    def track_market(self, event: MarketEvent) -> None:
         self.market_events.append(event)
 
-    def evaluate_fill(self, event: FillEvent) -> None:
+    def track_fill(self, event: FillEvent) -> None:
         self.observed.append(event)
 
 
@@ -117,7 +117,7 @@ def _make_engine(
     portfolio: Portfolio,
     execution: ExecutionHandler,
     risk_manager: RiskManager | None = None,
-    observer: Observer | None = None,
+    tracker: Tracker | None = None,
 ) -> Engine:
     return Engine(
         data_handler=StubDataHandler(bars),
@@ -125,7 +125,7 @@ def _make_engine(
         portfolio=portfolio,
         execution_handler=execution,
         risk_manager=risk_manager,
-        observer=observer,
+        tracker=tracker,
     )
 
 
@@ -224,20 +224,18 @@ def test_engine_runs_without_risk_manager() -> None:
     _make_engine([market], strategy, portfolio, execution).run()
 
 
-def test_risk_manager_and_observer_run_independently() -> None:
-    """Both slots can be wired at once: observer observes fills, risk reconciles orders."""
+def test_risk_manager_and_tracker_run_independently() -> None:
+    """Both slots can be wired at once: tracker observes fills, risk reconciles orders."""
     market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
-    risk, observer = RecordingRiskManager(), StubObserver()
+    risk, tracker = RecordingRiskManager(), StubTracker()
 
-    _make_engine(
-        [market], strategy, portfolio, execution, risk_manager=risk, observer=observer
-    ).run()
+    _make_engine([market], strategy, portfolio, execution, risk_manager=risk, tracker=tracker).run()
 
     assert risk.market_events == [market]
     assert [o.ticker for o in risk.received_orders[0]] == ["AAPL"]
-    assert observer.market_events == [market]
-    assert observer.observed[0].ticker == "AAPL"
+    assert tracker.market_events == [market]
+    assert tracker.observed[0].ticker == "AAPL"
 
 
 class DropAllRiskManager:

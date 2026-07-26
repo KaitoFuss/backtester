@@ -2,7 +2,7 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 
-from backtester.core.engine import PositionSource
+from backtester.core.engine import PortfolioView
 from backtester.core.events import MarketEvent, OrderEvent, Position
 
 logger = logging.getLogger(__name__)
@@ -15,8 +15,9 @@ class PositionExitRiskManager:
     exiting and appending its own exit orders.
 
     Position state (entry price/date/quantity) is pulled from the ``Portfolio``
-    via the ``PositionSource`` protocol rather than reconstructed from the fill
-    stream — the portfolio already owns positions, so it owns their cost basis.
+    via the read-only ``PortfolioView`` protocol rather than reconstructed from
+    the fill stream — the portfolio already owns positions, so it owns their
+    cost basis.
 
     Each threshold is disabled by passing ``None``. When multiple thresholds
     are configured and more than one is breached on the same bar, stop-loss is
@@ -25,12 +26,12 @@ class PositionExitRiskManager:
 
     def __init__(
         self,
-        position_source: PositionSource,
+        portfolio: PortfolioView,
         stop_loss_pct: float | None = None,
         take_profit_pct: float | None = None,
         max_holding_days: int | None = None,
     ) -> None:
-        self._position_source = position_source
+        self._portfolio = portfolio
         self._stop_loss_pct = stop_loss_pct
         self._take_profit_pct = take_profit_pct
         self._max_holding_days = max_holding_days
@@ -39,7 +40,7 @@ class PositionExitRiskManager:
         exits: list[OrderEvent] = []
         exit_tickers: set[str] = set()
         for ticker, bar in event.bars.items():
-            position = self._position_source.get_position(ticker)
+            position = self._portfolio.get_position(ticker)
             if position is None or position.quantity == 0:
                 continue
 

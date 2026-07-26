@@ -1,7 +1,6 @@
 import math
 import statistics
 from collections import deque
-from collections.abc import Sequence
 
 from backtester.core.events import MarketEvent, SignalEvent, Ticker
 
@@ -12,7 +11,7 @@ class ZScoreMovingAverageStrategy:
         self._returns: dict[Ticker, deque[float]] = {}
         self._last_close: dict[Ticker, float] = {}
 
-    def process_market(self, event: MarketEvent) -> Sequence[SignalEvent]:
+    def process_market(self, event: MarketEvent) -> SignalEvent:
         scores: dict[Ticker, float] = {}
 
         for ticker, bar in event.bars.items():
@@ -34,6 +33,4 @@ class ZScoreMovingAverageStrategy:
             z = (returns[-1] - statistics.fmean(returns)) / stdev
             scores[ticker] = -z
 
-        if not scores:
-            return []
-        return [SignalEvent(timestamp=event.timestamp, scores=scores)]
+        return SignalEvent(timestamp=event.timestamp, scores=scores)

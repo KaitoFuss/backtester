@@ -22,7 +22,7 @@ def test_ticker_skipped_until_window_warmed_up() -> None:
     events = _bars(100.0, 101.0, 102.0)
     results = [strategy.process_market(e) for e in events]
 
-    assert all(r == [] for r in results)
+    assert all(r.scores == {} for r in results)
 
 
 def test_below_average_return_yields_positive_score() -> None:
@@ -31,10 +31,9 @@ def test_below_average_return_yields_positive_score() -> None:
     *warmup, last = _bars(100.0, 101.0, 102.0, 95.0)
     for event in warmup:
         strategy.process_market(event)
-    signals = strategy.process_market(last)
+    signal = strategy.process_market(last)
 
-    assert len(signals) == 1
-    assert signals[0].scores["AAPL"] > 0
+    assert signal.scores["AAPL"] > 0
 
 
 def test_above_average_return_yields_negative_score() -> None:
@@ -43,10 +42,9 @@ def test_above_average_return_yields_negative_score() -> None:
     *warmup, last = _bars(100.0, 99.0, 98.0, 110.0)
     for event in warmup:
         strategy.process_market(event)
-    signals = strategy.process_market(last)
+    signal = strategy.process_market(last)
 
-    assert len(signals) == 1
-    assert signals[0].scores["AAPL"] < 0
+    assert signal.scores["AAPL"] < 0
 
 
 def test_tickers_warm_up_independently() -> None:
@@ -60,7 +58,7 @@ def test_tickers_warm_up_independently() -> None:
     ]
 
     signals = [strategy.process_market(e) for e in events]
-    last_scores = signals[-1][0].scores
+    last_scores = signals[-1].scores
 
     assert "AAPL" in last_scores
     assert "MSFT" not in last_scores
@@ -79,7 +77,7 @@ def test_ticker_gap_does_not_crash_and_still_warms_up() -> None:
 
     signals = [strategy.process_market(e) for e in events]
 
-    assert "AAPL" in signals[-1][0].scores
+    assert "AAPL" in signals[-1].scores
 
 
 def test_constant_returns_produce_no_score() -> None:
@@ -89,4 +87,4 @@ def test_constant_returns_produce_no_score() -> None:
 
     signals = [strategy.process_market(e) for e in _bars(*closes)]
 
-    assert signals[-1] == []
+    assert signals[-1].scores == {}

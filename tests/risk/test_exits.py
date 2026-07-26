@@ -7,12 +7,15 @@ from backtester.risk.exits import PositionExitRiskManager
 TS = datetime(2024, 1, 1)
 
 
-class StubPositionSource:
+class StubPortfolioView:
     def __init__(self, *positions: Position) -> None:
         self._positions = {p.ticker: p for p in positions}
 
     def get_position(self, ticker: str) -> Position | None:
         return self._positions.get(ticker)
+
+    def mark_to_market(self) -> float:
+        return 0.0
 
 
 def _position(
@@ -39,7 +42,7 @@ def _order(
 
 
 def test_stop_loss_triggers_flattening_order() -> None:
-    risk = PositionExitRiskManager(StubPositionSource(_position()), stop_loss_pct=0.05)
+    risk = PositionExitRiskManager(StubPortfolioView(_position()), stop_loss_pct=0.05)
 
     orders = risk.reconcile(_market(TS + timedelta(days=1), close=94.0), [])
 
@@ -49,7 +52,7 @@ def test_stop_loss_triggers_flattening_order() -> None:
 
 
 def test_take_profit_triggers_flattening_order() -> None:
-    risk = PositionExitRiskManager(StubPositionSource(_position()), take_profit_pct=0.10)
+    risk = PositionExitRiskManager(StubPortfolioView(_position()), take_profit_pct=0.10)
 
     orders = risk.reconcile(_market(TS + timedelta(days=1), close=111.0), [])
 
@@ -59,7 +62,7 @@ def test_take_profit_triggers_flattening_order() -> None:
 
 
 def test_max_holding_days_triggers_flattening_order() -> None:
-    risk = PositionExitRiskManager(StubPositionSource(_position()), max_holding_days=5)
+    risk = PositionExitRiskManager(StubPortfolioView(_position()), max_holding_days=5)
 
     orders = risk.reconcile(_market(TS + timedelta(days=6), close=100.0), [])
 
@@ -70,7 +73,7 @@ def test_max_holding_days_triggers_flattening_order() -> None:
 
 def test_no_trigger_within_bounds() -> None:
     risk = PositionExitRiskManager(
-        StubPositionSource(_position()),
+        StubPortfolioView(_position()),
         stop_loss_pct=0.05,
         take_profit_pct=0.10,
         max_holding_days=5,
@@ -83,7 +86,7 @@ def test_no_trigger_within_bounds() -> None:
 
 def test_disabled_checks_via_none_never_trigger() -> None:
     risk = PositionExitRiskManager(
-        StubPositionSource(_position()),
+        StubPortfolioView(_position()),
         stop_loss_pct=None,
         take_profit_pct=None,
         max_holding_days=None,
@@ -95,7 +98,7 @@ def test_disabled_checks_via_none_never_trigger() -> None:
 
 
 def test_missing_ticker_in_bar_is_skipped() -> None:
-    risk = PositionExitRiskManager(StubPositionSource(_position(ticker="AAPL")), stop_loss_pct=0.01)
+    risk = PositionExitRiskManager(StubPortfolioView(_position(ticker="AAPL")), stop_loss_pct=0.01)
 
     orders = risk.reconcile(_market(TS + timedelta(days=1), ticker="MSFT", close=1.0), [])
 
@@ -103,7 +106,7 @@ def test_missing_ticker_in_bar_is_skipped() -> None:
 
 
 def test_no_position_means_no_exit() -> None:
-    risk = PositionExitRiskManager(StubPositionSource(), stop_loss_pct=0.01)
+    risk = PositionExitRiskManager(StubPortfolioView(), stop_loss_pct=0.01)
 
     orders = risk.reconcile(_market(TS + timedelta(days=1), close=1.0), [])
 
@@ -111,7 +114,7 @@ def test_no_position_means_no_exit() -> None:
 
 
 def test_short_position_stop_loss_direction() -> None:
-    risk = PositionExitRiskManager(StubPositionSource(_position(quantity=-10)), stop_loss_pct=0.05)
+    risk = PositionExitRiskManager(StubPortfolioView(_position(quantity=-10)), stop_loss_pct=0.05)
 
     orders = risk.reconcile(_market(TS + timedelta(days=1), close=106.0), [])
 
@@ -122,7 +125,7 @@ def test_short_position_stop_loss_direction() -> None:
 
 def test_passes_through_unaffected_strategy_orders() -> None:
     """Orders on tickers the risk manager is not exiting flow through untouched."""
-    risk = PositionExitRiskManager(StubPositionSource(_position()), stop_loss_pct=0.05)
+    risk = PositionExitRiskManager(StubPortfolioView(_position()), stop_loss_pct=0.05)
     incoming = [_order(ticker="MSFT", direction="BUY")]
 
     orders = risk.reconcile(_market(TS + timedelta(days=1), close=101.0), incoming)
@@ -133,7 +136,7 @@ def test_passes_through_unaffected_strategy_orders() -> None:
 def test_risk_exit_replaces_strategy_order_on_same_ticker() -> None:
     """When risk exits a ticker, any strategy order on that ticker is dropped and
     the risk exit takes its place (risk beats strategy)."""
-    risk = PositionExitRiskManager(StubPositionSource(_position()), stop_loss_pct=0.05)
+    risk = PositionExitRiskManager(StubPortfolioView(_position()), stop_loss_pct=0.05)
     incoming = [_order(ticker="AAPL", quantity=5, direction="BUY")]
 
     orders = risk.reconcile(_market(TS + timedelta(days=1), close=94.0), incoming)
