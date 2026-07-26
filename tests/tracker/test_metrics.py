@@ -5,6 +5,11 @@ from backtester.tracker.metrics import PerformanceTracker
 
 TS = datetime(2024, 1, 1)
 
+# A bar with at least one live price; the tracker only reads the timestamp and
+# the portfolio valuation, but it skips bars with no prices, so tests that just
+# need an observation recorded pass this rather than an empty ``bars``.
+LIVE_BARS = {"AAPL": Bar(close=100.0)}
+
 
 def _ts(n: int) -> datetime:
     return TS + timedelta(days=n)
@@ -40,7 +45,7 @@ def test_mark_to_market_history_samples_portfolio_valuation_per_bar() -> None:
 def test_metrics_with_flat_equity_are_zero() -> None:
     tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0] * 5))
     for i in range(5):
-        tracker.track_market(MarketEvent(timestamp=_ts(i), bars={}))
+        tracker.track_market(MarketEvent(timestamp=_ts(i), bars=LIVE_BARS))
 
     metrics = tracker.metrics()
 
@@ -52,7 +57,7 @@ def test_metrics_with_flat_equity_are_zero() -> None:
 
 def test_metrics_with_insufficient_history_are_zero() -> None:
     tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0]))
-    tracker.track_market(MarketEvent(timestamp=_ts(0), bars={}))
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars=LIVE_BARS))
 
     metrics = tracker.metrics()
 
@@ -64,7 +69,7 @@ def test_max_drawdown_reflects_peak_to_trough_decline() -> None:
     values = [1_000.0, 1_200.0, 800.0, 900.0]
     tracker = PerformanceTracker(portfolio=FakePortfolioView(values))
     for i in range(len(values)):
-        tracker.track_market(MarketEvent(timestamp=_ts(i), bars={}))
+        tracker.track_market(MarketEvent(timestamp=_ts(i), bars=LIVE_BARS))
 
     metrics = tracker.metrics()
 
@@ -124,21 +129,33 @@ def test_time_in_market_and_turnover_track_open_positions_across_bars() -> None:
     portfolio = FakePortfolioView([1_000.0, 1_000.0, 1_000.0])
     tracker = PerformanceTracker(portfolio=portfolio)
 
-    tracker.track_market(MarketEvent(timestamp=_ts(0), bars={}))
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars=LIVE_BARS))
     tracker.track_fill(
         FillEvent(timestamp=_ts(0), ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
     )
     portfolio.set_position(
         "AAPL", Position(ticker="AAPL", quantity=10, entry_price=100.0, entry_date=_ts(0))
     )
-    tracker.track_market(MarketEvent(timestamp=_ts(1), bars={}))
+    tracker.track_market(MarketEvent(timestamp=_ts(1), bars=LIVE_BARS))
     tracker.track_fill(
         FillEvent(timestamp=_ts(1), ticker="AAPL", quantity=10, direction="SELL", fill_price=110.0)
     )
     portfolio.set_position("AAPL", None)
-    tracker.track_market(MarketEvent(timestamp=_ts(2), bars={}))
+    tracker.track_market(MarketEvent(timestamp=_ts(2), bars=LIVE_BARS))
 
     metrics = tracker.trade_metrics()
 
     assert metrics.time_in_market == 1 / 3
     assert metrics.turnover == (10 * 100.0 + 10 * 110.0) / 1_000.0
+
+
+def test_track_market_skips_bars_with_no_prices() -> None:
+    # A no-data bar (universe outside its data window) must not record an equity
+    # point; the reported series ends at the last live bar, not the last file.
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0, 1_050.0]))
+
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars=LIVE_BARS))
+    tracker.track_market(MarketEvent(timestamp=_ts(1), bars={}))
+    tracker.track_market(MarketEvent(timestamp=_ts(2), bars=LIVE_BARS))
+
+    assert tracker.mark_to_market_history == [(_ts(0), 1_000.0), (_ts(2), 1_050.0)]

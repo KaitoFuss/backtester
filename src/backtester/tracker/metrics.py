@@ -72,6 +72,14 @@ class PerformanceTracker:
         self._traded_notional = 0.0
 
     def track_market(self, event: MarketEvent) -> None:
+        # A bar with no prices for any traded ticker is outside the data window
+        # for this universe (e.g. before the first listing, or after a data
+        # feed ends). Recording it would mark held positions at stale prices and
+        # pad the equity series with dead, zero-return points, flattening the
+        # tail of every report and biasing the annualized metrics. Skipping such
+        # bars lets the reported window track the actual data range dynamically.
+        if not event.bars:
+            return
         self._mark_to_market_history.append((event.timestamp, self._portfolio.mark_to_market()))
         if self._open_tickers:
             self._bars_in_market += 1
