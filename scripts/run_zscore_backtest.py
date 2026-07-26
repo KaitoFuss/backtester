@@ -21,6 +21,7 @@ from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
 from backtester.tracker.metrics import PerformanceTracker
 from backtester.tracker.plotting import plot_equity_curve
+from backtester.tracker.reporting import monthly_returns_table, strategy_correlation_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,21 @@ def _log_metrics(label: str, tracker: PerformanceTracker) -> None:
     logger.info("Sharpe (rf=0):       %.2f", metrics.sharpe)
     logger.info("Max drawdown:        %s", f"{metrics.max_drawdown:.2%}")
 
+    trade_metrics = tracker.trade_metrics()
+    logger.info("Num trades:          %d", trade_metrics.num_trades)
+    logger.info("Win rate:            %s", f"{trade_metrics.win_rate:.2%}")
+    logger.info("Avg win / avg loss:  %.2f / %.2f", trade_metrics.avg_win, trade_metrics.avg_loss)
+    logger.info("Risk/reward ratio:   %.2f", trade_metrics.risk_reward_ratio)
+    logger.info("Payoff factor:       %.2f", trade_metrics.payoff_factor)
+    logger.info("CPC index:           %.2f", trade_metrics.cpc_index)
+    logger.info("Time in market:      %s", f"{trade_metrics.time_in_market:.2%}")
+    logger.info("Turnover:            %.2f", trade_metrics.turnover)
+
+    monthly_table = monthly_returns_table(tracker.mark_to_market_history)
+    logger.info(
+        "Monthly returns (%s):\n%s", label, monthly_table.to_string(float_format="{:.2%}".format)
+    )
+
 
 def main() -> None:
     if len(sys.argv) != 2:
@@ -110,6 +126,16 @@ def main() -> None:
 
     _log_metrics("Strategy", strategy_tracker)
     _log_metrics("Buy & Hold", benchmark_tracker)
+
+    correlation = strategy_correlation_matrix(
+        {
+            "Strategy": strategy_tracker.mark_to_market_history,
+            "Buy & Hold": benchmark_tracker.mark_to_market_history,
+        }
+    )
+    logger.info(
+        "Strategy correlation matrix:\n%s", correlation.to_string(float_format="{:.2f}".format)
+    )
 
     plot_dir = Path(config.plot_dir) / "zscore_ma"
     plot_equity_curve(
