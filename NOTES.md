@@ -234,5 +234,5 @@ src/backtester/
 | Position sizing (§5) | Score-proportional weights normalized by total absolute score | Caps gross exposure at 1× equity, long/short symmetric |
 | Hold/close semantics (§5) | Score of exactly 0 closes the position; a ticker absent from the signal is held unchanged | Zero is an explicit "no exposure" target; absence carries no information |
 | Execution (§6) | Market orders filled at current cached close, no slippage/commission yet | Ideal baseline; realistic fill models are additive later |
-| Risk integration (§7) | Observer-only `RiskManager` hook (non-blocking); currently occupied by `PerformanceTracker` | Acting risk controls (stop-loss etc.) will need an order-emitting hook — protocol rework planned |
+| Risk integration (§7) | `RiskManager.reconcile(event, orders)` intercepts each bar's order batch — drops strategy orders on tickers it is force-exiting and appends its own exits (risk beats strategy); passive equity/metrics tracking moved to a separate `Tracker` hook (`PerformanceTracker`) | Risk must be able to emit orders, not just observe; splitting the observer duties out keeps each hook single-purpose |
 | Data validation (§3) | Parquet filenames validated as `YYYY-MM-DD` fail-fast at construction | Stray files error clearly before a backtest runs |

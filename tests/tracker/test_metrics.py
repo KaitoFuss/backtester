@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
-from backtester.core.events import Bar, MarketEvent
-from backtester.performance.metrics import PerformanceTracker
+from backtester.core.events import Bar, MarketEvent, Position
+from backtester.tracker.metrics import PerformanceTracker
 
 TS = datetime(2024, 1, 1)
 
@@ -10,27 +10,30 @@ def _ts(n: int) -> datetime:
     return TS + timedelta(days=n)
 
 
-class FakePortfolioValuer:
+class FakePortfolioView:
     def __init__(self, values: list[float]) -> None:
         self._values = iter(values)
+
+    def get_position(self, ticker: str) -> Position | None:
+        return None
 
     def mark_to_market(self) -> float:
         return next(self._values)
 
 
 def test_mark_to_market_history_samples_portfolio_valuation_per_bar() -> None:
-    tracker = PerformanceTracker(portfolio=FakePortfolioValuer([1_000.0, 1_050.0]))
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0, 1_050.0]))
 
-    tracker.evaluate_market(MarketEvent(timestamp=_ts(0), bars={"AAPL": Bar(close=100.0)}))
-    tracker.evaluate_market(MarketEvent(timestamp=_ts(1), bars={"AAPL": Bar(close=110.0)}))
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars={"AAPL": Bar(close=100.0)}))
+    tracker.track_market(MarketEvent(timestamp=_ts(1), bars={"AAPL": Bar(close=110.0)}))
 
     assert tracker.mark_to_market_history == [(_ts(0), 1_000.0), (_ts(1), 1_050.0)]
 
 
 def test_metrics_with_flat_equity_are_zero() -> None:
-    tracker = PerformanceTracker(portfolio=FakePortfolioValuer([1_000.0] * 5))
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0] * 5))
     for i in range(5):
-        tracker.evaluate_market(MarketEvent(timestamp=_ts(i), bars={}))
+        tracker.track_market(MarketEvent(timestamp=_ts(i), bars={}))
 
     metrics = tracker.metrics()
 
@@ -41,8 +44,8 @@ def test_metrics_with_flat_equity_are_zero() -> None:
 
 
 def test_metrics_with_insufficient_history_are_zero() -> None:
-    tracker = PerformanceTracker(portfolio=FakePortfolioValuer([1_000.0]))
-    tracker.evaluate_market(MarketEvent(timestamp=_ts(0), bars={}))
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0]))
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars={}))
 
     metrics = tracker.metrics()
 
@@ -52,9 +55,9 @@ def test_metrics_with_insufficient_history_are_zero() -> None:
 
 def test_max_drawdown_reflects_peak_to_trough_decline() -> None:
     values = [1_000.0, 1_200.0, 800.0, 900.0]
-    tracker = PerformanceTracker(portfolio=FakePortfolioValuer(values))
+    tracker = PerformanceTracker(portfolio=FakePortfolioView(values))
     for i in range(len(values)):
-        tracker.evaluate_market(MarketEvent(timestamp=_ts(i), bars={}))
+        tracker.track_market(MarketEvent(timestamp=_ts(i), bars={}))
 
     metrics = tracker.metrics()
 

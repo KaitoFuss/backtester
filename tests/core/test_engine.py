@@ -1,7 +1,14 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from backtester.core.engine import Engine, ExecutionHandler, Portfolio, RiskManager, Strategy
+from backtester.core.engine import (
+    Engine,
+    ExecutionHandler,
+    Portfolio,
+    RiskManager,
+    Strategy,
+    Tracker,
+)
 from backtester.core.events import Bar, FillEvent, MarketEvent, OrderEvent, SignalEvent
 
 TS = datetime(2024, 1, 1)
@@ -30,9 +37,9 @@ class StubStrategy:
     def __init__(self) -> None:
         self.received: list[MarketEvent] = []
 
-    def process_market(self, event: MarketEvent) -> Sequence[SignalEvent]:
+    def process_market(self, event: MarketEvent) -> SignalEvent:
         self.received.append(event)
-        return [SignalEvent(timestamp=event.timestamp, scores=dict.fromkeys(event.bars, 1.0))]
+        return SignalEvent(timestamp=event.timestamp, scores=dict.fromkeys(event.bars, 1.0))
 
 
 class StubPortfolio:
@@ -50,9 +57,8 @@ class StubPortfolio:
             if s > 0
         ]
 
-    def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
+    def process_fill(self, event: FillEvent) -> None:
         self.fills.append(event)
-        return []
 
 
 class StubExecutionHandler:
@@ -80,14 +86,27 @@ class StubExecutionHandler:
 
 
 class RecordingRiskManager:
+    """Passes every order batch through untouched, recording what it saw."""
+
+    def __init__(self) -> None:
+        self.market_events: list[MarketEvent] = []
+        self.received_orders: list[list[OrderEvent]] = []
+
+    def reconcile(self, event: MarketEvent, orders: Sequence[OrderEvent]) -> Sequence[OrderEvent]:
+        self.market_events.append(event)
+        self.received_orders.append(list(orders))
+        return orders
+
+
+class StubTracker:
     def __init__(self) -> None:
         self.observed: list[FillEvent] = []
         self.market_events: list[MarketEvent] = []
 
-    def evaluate_market(self, event: MarketEvent) -> None:
+    def track_market(self, event: MarketEvent) -> None:
         self.market_events.append(event)
 
-    def evaluate_fill(self, event: FillEvent) -> None:
+    def track_fill(self, event: FillEvent) -> None:
         self.observed.append(event)
 
 
@@ -97,6 +116,7 @@ def _make_engine(
     portfolio: Portfolio,
     execution: ExecutionHandler,
     risk_manager: RiskManager | None = None,
+    tracker: Tracker | None = None,
 ) -> Engine:
     return Engine(
         data_handler=StubDataHandler(bars),
@@ -104,6 +124,7 @@ def _make_engine(
         portfolio=portfolio,
         execution_handler=execution,
         risk_manager=risk_manager,
+        tracker=tracker,
     )
 
 
@@ -121,28 +142,6 @@ def test_full_pipeline() -> None:
     assert execution.orders[0].ticker == "AAPL"
     assert len(portfolio.fills) == 1
     assert portfolio.fills[0].ticker == "AAPL"
-
-
-def test_fill_orders_dispatched() -> None:
-    """Orders returned by process_fill are dispatched back through the execution handler."""
-
-    class HedgingPortfolio(StubPortfolio):
-        def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
-            self.fills.append(event)
-            if event.ticker == "AAPL":
-                return [
-                    OrderEvent(
-                        timestamp=event.timestamp, ticker="SPY", quantity=50, direction="SELL"
-                    )
-                ]
-            return []
-
-    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
-    strategy, portfolio, execution = StubStrategy(), HedgingPortfolio(), StubExecutionHandler()
-
-    _make_engine([market], strategy, portfolio, execution).run()
-
-    assert [o.ticker for o in execution.orders] == ["AAPL", "SPY"]
 
 
 def test_engine_processes_multiple_bars() -> None:
@@ -169,33 +168,19 @@ def test_engine_stops_when_data_exhausted() -> None:
     assert strategy.received == []
 
 
-def test_risk_manager_evaluates_fills() -> None:
+def test_risk_manager_sees_strategy_order_batch() -> None:
+    """The risk manager reconciles the strategy's order batch each bar."""
     market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
     risk = RecordingRiskManager()
 
     _make_engine([market], strategy, portfolio, execution, risk_manager=risk).run()
 
-    assert len(risk.observed) == 1
-    assert risk.observed[0].ticker == "AAPL"
+    assert risk.market_events == [market]
+    assert [o.ticker for o in risk.received_orders[0]] == ["AAPL"]
 
 
-def test_risk_manager_evaluates_fills_across_bars() -> None:
-    ts2 = datetime(2024, 1, 2)
-    bars = [
-        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
-        MarketEvent(timestamp=ts2, bars={"AAPL": Bar(close=155.0)}),
-    ]
-    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
-    risk = RecordingRiskManager()
-
-    _make_engine(bars, strategy, portfolio, execution, risk_manager=risk).run()
-
-    assert len(risk.observed) == 2
-    assert [f.ticker for f in risk.observed] == ["AAPL", "AAPL"]
-
-
-def test_risk_manager_evaluates_market_events_per_bar() -> None:
+def test_risk_manager_reconciles_every_bar() -> None:
     ts2 = datetime(2024, 1, 2)
     bars = [
         MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
@@ -209,37 +194,42 @@ def test_risk_manager_evaluates_market_events_per_bar() -> None:
     assert risk.market_events == bars
 
 
-def test_risk_manager_accumulates_metrics() -> None:
-    """A stateful RiskManager can track running totals across fills."""
-
-    class CostTracker:
-        def __init__(self) -> None:
-            self.total_commission: float = 0.0
-            self.total_slippage: float = 0.0
-
-        def evaluate_market(self, event: MarketEvent) -> None:
-            pass
-
-        def evaluate_fill(self, event: FillEvent) -> None:
-            self.total_commission += event.commission
-            self.total_slippage += event.slippage
-
-    ts2 = datetime(2024, 1, 2)
-    bars = [
-        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
-        MarketEvent(timestamp=ts2, bars={"AAPL": Bar(close=155.0)}),
-    ]
-    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
-    tracker = CostTracker()
-
-    _make_engine(bars, strategy, portfolio, execution, risk_manager=tracker).run()
-
-    assert tracker.total_commission == StubExecutionHandler.COMMISSION * 2
-    assert tracker.total_slippage == StubExecutionHandler.SLIPPAGE * 2
-
-
 def test_engine_runs_without_risk_manager() -> None:
     market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
 
     _make_engine([market], strategy, portfolio, execution).run()
+
+
+def test_risk_manager_and_tracker_run_independently() -> None:
+    """Both slots can be wired at once: tracker observes fills, risk reconciles orders."""
+    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
+    risk, tracker = RecordingRiskManager(), StubTracker()
+
+    _make_engine([market], strategy, portfolio, execution, risk_manager=risk, tracker=tracker).run()
+
+    assert risk.market_events == [market]
+    assert [o.ticker for o in risk.received_orders[0]] == ["AAPL"]
+    assert tracker.market_events == [market]
+    assert tracker.observed[0].ticker == "AAPL"
+
+
+class DropAllRiskManager:
+    """Replaces the strategy's whole batch with a single fixed exit order."""
+
+    def reconcile(self, event: MarketEvent, orders: Sequence[OrderEvent]) -> Sequence[OrderEvent]:
+        return [OrderEvent(timestamp=event.timestamp, ticker="AAPL", quantity=7, direction="SELL")]
+
+
+def test_risk_manager_beats_strategy() -> None:
+    """Only the risk manager's reconciled orders reach the execution handler; the
+    strategy's own order for the same ticker is overridden."""
+    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
+
+    _make_engine([market], strategy, portfolio, execution, risk_manager=DropAllRiskManager()).run()
+
+    assert len(execution.orders) == 1
+    assert execution.orders[0].direction == "SELL"
+    assert execution.orders[0].quantity == 7

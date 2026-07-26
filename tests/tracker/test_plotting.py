@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from backtester.performance.plotting import plot_equity_curve
+from backtester.tracker.plotting import plot_equity_curve
 
 TS = datetime(2024, 1, 1)
 
