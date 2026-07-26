@@ -29,7 +29,7 @@ class BacktestConfig:
     stop_loss_pct: float | None = None
     take_profit_pct: float | None = None
     max_holding_days: int | None = None
-    plot_dir: str = "output"
+    output_dir: str = "output"
 
     @classmethod
     def from_json(cls, path: Path) -> Self:

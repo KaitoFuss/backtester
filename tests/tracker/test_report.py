@@ -40,6 +40,7 @@ def test_save_report_writes_report_1_pdf_on_first_run(tmp_path: Path) -> None:
 
     path = save_report(
         output_dir=tmp_path,
+        histories=histories,
         metrics=metrics,
         trade_metrics=trade_metrics,
         monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
@@ -59,6 +60,7 @@ def test_save_report_increments_and_never_overwrites(tmp_path: Path) -> None:
 
     first = save_report(
         output_dir=tmp_path,
+        histories=histories,
         metrics=metrics,
         trade_metrics=trade_metrics,
         monthly_tables=monthly_tables,
@@ -67,6 +69,7 @@ def test_save_report_increments_and_never_overwrites(tmp_path: Path) -> None:
     )
     second = save_report(
         output_dir=tmp_path,
+        histories=histories,
         metrics=metrics,
         trade_metrics=trade_metrics,
         monthly_tables=monthly_tables,
@@ -87,6 +90,7 @@ def test_save_report_increments_past_gaps_in_existing_files(tmp_path: Path) -> N
 
     path = save_report(
         output_dir=tmp_path,
+        histories=histories,
         metrics=metrics,
         trade_metrics=trade_metrics,
         monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},

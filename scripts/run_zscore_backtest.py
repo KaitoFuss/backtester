@@ -20,7 +20,6 @@ from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
 from backtester.tracker.metrics import PerformanceTracker
-from backtester.tracker.plotting import plot_equity_curve
 from backtester.tracker.report import save_report
 from backtester.tracker.reporting import monthly_returns_table, strategy_correlation_matrix
 
@@ -102,11 +101,9 @@ def main() -> None:
     trackers = {"Strategy": strategy_tracker, "Buy & Hold": benchmark_tracker}
     histories = {label: tracker.mark_to_market_history for label, tracker in trackers.items()}
 
-    plot_dir = Path(config.plot_dir) / "zscore_ma"
-    plot_equity_curve(histories, plot_dir / "equity_curve.png")
-
     report_path = save_report(
-        output_dir=plot_dir,
+        output_dir=Path(config.output_dir) / "zscore_ma",
+        histories=histories,
         metrics={label: tracker.metrics() for label, tracker in trackers.items()},
         trade_metrics={label: tracker.trade_metrics() for label, tracker in trackers.items()},
         monthly_tables={
@@ -116,7 +113,6 @@ def main() -> None:
         config=config,
     )
     logger.info("Report written to %s", report_path)
-    logger.info("Plots written to %s/", plot_dir)
 
 
 if __name__ == "__main__":
