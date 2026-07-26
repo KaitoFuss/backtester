@@ -1,5 +1,5 @@
 """Run the z-score mean-reversion strategy against locally fetched Parquet data,
-alongside a buy-and-hold benchmark, and print first-pass performance metrics.
+alongside a buy-and-hold benchmark, and write a performance report PDF.
 
 Usage:
     uv run scripts/run_zscore_backtest.py configs/zscore_backtest.json
@@ -20,7 +20,8 @@ from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
 from backtester.tracker.metrics import PerformanceTracker
-from backtester.tracker.plotting import plot_equity_curve
+from backtester.tracker.report import save_report
+from backtester.tracker.reporting import monthly_returns_table, strategy_correlation_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -63,17 +64,6 @@ def _run_backtest(
     return tracker
 
 
-def _log_metrics(label: str, tracker: PerformanceTracker) -> None:
-    metrics = tracker.metrics()
-    logger.info("=== %s ===", label)
-    logger.info("Bars processed:      %d", len(tracker.mark_to_market_history))
-    logger.info("Total return:        %s", f"{metrics.total_return:.2%}")
-    logger.info("Annualized return:   %s", f"{metrics.annualized_return:.2%}")
-    logger.info("Annualized vol:      %s", f"{metrics.annualized_vol:.2%}")
-    logger.info("Sharpe (rf=0):       %.2f", metrics.sharpe)
-    logger.info("Max drawdown:        %s", f"{metrics.max_drawdown:.2%}")
-
-
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: run_zscore_backtest.py <config.json>")
@@ -108,18 +98,21 @@ def main() -> None:
         config.max_holding_days,
     )
 
-    _log_metrics("Strategy", strategy_tracker)
-    _log_metrics("Buy & Hold", benchmark_tracker)
+    trackers = {"Strategy": strategy_tracker, "Buy & Hold": benchmark_tracker}
+    histories = {label: tracker.mark_to_market_history for label, tracker in trackers.items()}
 
-    plot_dir = Path(config.plot_dir) / "zscore_ma"
-    plot_equity_curve(
-        {
-            "Strategy": strategy_tracker.mark_to_market_history,
-            "Buy & Hold": benchmark_tracker.mark_to_market_history,
+    report_path = save_report(
+        output_dir=Path(config.output_dir) / "zscore_ma",
+        histories=histories,
+        metrics={label: tracker.metrics() for label, tracker in trackers.items()},
+        trade_metrics={label: tracker.trade_metrics() for label, tracker in trackers.items()},
+        monthly_tables={
+            label: monthly_returns_table(history) for label, history in histories.items()
         },
-        plot_dir / "equity_curve.png",
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
     )
-    logger.info("Plots written to %s/", plot_dir)
+    logger.info("Report written to %s", report_path)
 
 
 if __name__ == "__main__":
