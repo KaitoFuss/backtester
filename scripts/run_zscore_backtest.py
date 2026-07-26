@@ -15,7 +15,7 @@ from pathlib import Path
 from backtester.core.engine import Engine, Portfolio, PriceSource, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
-from backtester.portfolio.equal_weight import EqualWeightPortfolio
+from backtester.portfolio.score_proportional import ScoreProportionalPortfolio
 from backtester.portfolio.vol_weighted import VolWeightedPortfolio
 from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
@@ -140,7 +140,7 @@ def main() -> None:
         data_dir,
         args.tickers,
         BuyAndHoldStrategy(),
-        lambda price_source: EqualWeightPortfolio(
+        lambda price_source: ScoreProportionalPortfolio(
             price_source=price_source, initial_cash=args.initial_cash, max_gross=args.max_gross
         ),
         **risk_kwargs,

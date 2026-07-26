@@ -11,10 +11,13 @@ from backtester.portfolio.utils import (
 )
 
 
-class EqualWeightPortfolio:
+class ScoreProportionalPortfolio:
     """Default, no-frills portfolio: opens positions in proportion to signal
     score (``score / total abs score``), normalized into the gross exposure
-    still available under ``max_gross``. No vol estimate is required, so a
+    still available under ``max_gross``. Only equal-weights when every open
+    candidate's score has the same magnitude (e.g. ``BuyAndHoldStrategy``,
+    which always signals ``1.0``); otherwise larger-magnitude scores get
+    proportionally larger positions. No vol estimate is required, so a
     position opens on the same bar its score first qualifies — this is the
     reference portfolio for strategies like ``BuyAndHoldStrategy`` that need to
     invest immediately rather than wait out a vol warm-up window.
@@ -58,10 +61,15 @@ class EqualWeightPortfolio:
             self._exit_threshold,
             event.timestamp,
         )
-        return [*close_orders, *self._size_opens(event, open_candidates, equity)]
+        closing = {order.ticker for order in close_orders}
+        return [*close_orders, *self._size_opens(event, open_candidates, equity, closing)]
 
     def _size_opens(
-        self, event: SignalEvent, candidates: list[tuple[Ticker, float, float]], equity: float
+        self,
+        event: SignalEvent,
+        candidates: list[tuple[Ticker, float, float]],
+        equity: float,
+        closing: set[Ticker],
     ) -> list[OrderEvent]:
         if not candidates or equity <= 0:
             return []
@@ -71,9 +79,12 @@ class EqualWeightPortfolio:
             return []
 
         # Held positions are never resized, so new opens may only use the gross
-        # budget left free under the max_gross leverage cap.
+        # budget left free under the max_gross leverage cap. Tickers closing
+        # this same bar are excluded — their fill hasn't settled yet, but the
+        # capital they're about to free is available to size these opens.
         available = max(
-            0.0, self._max_gross - existing_gross(self._positions, self._price_source, equity)
+            0.0,
+            self._max_gross - existing_gross(self._positions, self._price_source, equity, closing),
         )
         if available == 0.0:
             return []

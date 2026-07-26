@@ -410,3 +410,30 @@ def test_held_position_shrinks_budget_for_a_new_open() -> None:
     )
 
     assert qty["MSFT"] == round(0.4 * 10_000.0 / 100.0)
+
+
+def test_same_bar_close_frees_its_gross_budget_for_a_new_open() -> None:
+    prices = MutablePriceSource(AAPL=100.0, MSFT=100.0)
+    portfolio = VolWeightedPortfolio(
+        price_source=prices,
+        initial_cash=10_000.0,
+        max_gross=1.0,
+        vol_window=2,
+        target_vol=50.0,
+    )
+    # Hold 60 shares of AAPL = $6000 = 60% of equity.
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=60, direction="BUY", fill_price=100.0)
+    )
+
+    qty = _warm_and_open(
+        portfolio,
+        prices,
+        {"MSFT": [105.0, 95.0]},
+        open_price={"MSFT": 100.0},
+        scores={"AAPL": -1.0, "MSFT": 1.0},
+    )
+
+    # AAPL's sign flip closes it this same bar, so its 60% is freed
+    # immediately for MSFT rather than still counting as held.
+    assert qty["MSFT"] == round(1.0 * 10_000.0 / 100.0)

@@ -44,6 +44,16 @@ def test_existing_gross_is_fraction_of_equity() -> None:
     assert existing_gross(positions, prices, equity=2_000.0) == (1_000.0 + 1_000.0) / 2_000.0
 
 
+def test_existing_gross_excludes_closing_tickers() -> None:
+    prices = FakePriceSource({"AAPL": 100.0, "MSFT": 50.0})
+    positions = {
+        "AAPL": Position(ticker="AAPL", quantity=10, entry_price=100.0, entry_date=TS),
+        "MSFT": Position(ticker="MSFT", quantity=-20, entry_price=50.0, entry_date=TS),
+    }
+
+    assert existing_gross(positions, prices, equity=2_000.0, closing={"MSFT"}) == 1_000.0 / 2_000.0
+
+
 def test_partition_signal_opens_candidate_above_entry_threshold() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
 

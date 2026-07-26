@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import replace
 from datetime import datetime
 
@@ -27,10 +27,20 @@ def compute_equity(
 
 
 def existing_gross(
-    positions: Mapping[Ticker, Position], price_source: PriceSource, equity: float
+    positions: Mapping[Ticker, Position],
+    price_source: PriceSource,
+    equity: float,
+    closing: Collection[Ticker] = (),
 ) -> float:
+    """Gross exposure of held positions, as a fraction of equity. ``closing``
+    excludes tickers with a close order already queued this bar — their
+    ``Position`` is still in ``positions`` until the close's ``FillEvent``
+    settles, but the capital they'll free is available to size this bar's new
+    opens against."""
     gross = 0.0
     for ticker, position in positions.items():
+        if ticker in closing:
+            continue
         price = price_source.get_price(ticker)
         if price is not None:
             gross += abs(position.quantity * price / equity)
