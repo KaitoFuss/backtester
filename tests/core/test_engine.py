@@ -239,3 +239,74 @@ def test_risk_manager_beats_strategy() -> None:
     assert len(execution.orders) == 1
     assert execution.orders[0].direction == "SELL"
     assert execution.orders[0].quantity == 7
+
+
+class HeldPositionPortfolio:
+    """Ignores every signal; starts with a fixed set of open positions so the
+    end-of-run liquidation step can be tested in isolation."""
+
+    def __init__(self, positions: dict[str, Position]) -> None:
+        self._positions = dict(positions)
+        self.fills: list[FillEvent] = []
+
+    def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
+        return []
+
+    def process_fill(self, event: FillEvent) -> None:
+        self.fills.append(event)
+        self._positions.pop(event.ticker, None)
+
+    def get_position(self, ticker: str) -> Position | None:
+        return self._positions.get(ticker)
+
+    def mark_to_market(self) -> float:
+        return 0.0
+
+
+def test_engine_liquidates_long_position_after_last_bar() -> None:
+    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    position = Position(ticker="AAPL", quantity=10, entry_price=100.0, entry_date=TS)
+    portfolio = HeldPositionPortfolio({"AAPL": position})
+    strategy, execution = StubStrategy(), StubExecutionHandler()
+    tracker = StubTracker()
+
+    _make_engine([market], strategy, portfolio, execution, tracker=tracker).run()
+
+    assert len(execution.orders) == 1
+    assert execution.orders[0] == OrderEvent(
+        timestamp=TS, ticker="AAPL", quantity=10, direction="SELL"
+    )
+    assert len(portfolio.fills) == 1
+    assert portfolio.get_position("AAPL") is None
+    assert tracker.observed[-1].ticker == "AAPL"
+
+
+def test_engine_liquidates_short_position_with_a_buy() -> None:
+    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    position = Position(ticker="AAPL", quantity=-5, entry_price=100.0, entry_date=TS)
+    portfolio = HeldPositionPortfolio({"AAPL": position})
+    strategy, execution = StubStrategy(), StubExecutionHandler()
+
+    _make_engine([market], strategy, portfolio, execution).run()
+
+    assert execution.orders[0].direction == "BUY"
+    assert execution.orders[0].quantity == 5
+
+
+def test_engine_liquidation_is_a_noop_with_no_open_positions() -> None:
+    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
+
+    _make_engine([], strategy, portfolio, execution).run()
+
+    assert execution.orders == []
+
+
+def test_engine_liquidation_skips_already_flat_tickers() -> None:
+    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    flat_position = Position(ticker="AAPL", quantity=0, entry_price=100.0, entry_date=TS)
+    portfolio = HeldPositionPortfolio({"AAPL": flat_position})
+    strategy, execution = StubStrategy(), StubExecutionHandler()
+
+    _make_engine([market], strategy, portfolio, execution).run()
+
+    assert execution.orders == []

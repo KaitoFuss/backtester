@@ -112,3 +112,25 @@ class Engine:
             self._queue.put(bar)
             while not self._queue.empty():
                 self._dispatch(self._queue.get())
+        self._liquidate_open_positions()
+
+    def _liquidate_open_positions(self) -> None:
+        """Force-close open positions on the last bar's tickers at the end of
+        the run, so performance metrics reflect realized rather than
+        marked-to-market PnL on positions still open when data runs out."""
+        if self._current_bar is None:
+            return
+        for ticker in self._current_bar.bars:
+            position = self._portfolio.get_position(ticker)
+            if position is None or position.quantity == 0:
+                continue
+            self._queue.put(
+                OrderEvent(
+                    timestamp=self._current_bar.timestamp,
+                    ticker=ticker,
+                    quantity=abs(position.quantity),
+                    direction="SELL" if position.quantity > 0 else "BUY",
+                )
+            )
+        while not self._queue.empty():
+            self._dispatch(self._queue.get())
