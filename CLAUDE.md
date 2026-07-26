@@ -60,6 +60,8 @@ Every module that makes a trading decision logs it, at a level chosen so `INFO` 
 - **WARNING** — data went missing where it was expected (e.g. no price for a held position when marking equity).
 - **ERROR** — an order genuinely can't be filled (e.g. no price available at all).
 
+Message format: a per-ticker/per-decision line leads with the ticker (e.g. `"%s: closing ..."`, matching `portfolio/utils.py`, `risk/exits.py`, `strategy/zscore_ma.py`) — never with `event.timestamp`, since the log record's own `asctime` already carries wall-clock time. Only the genuinely per-bar pipeline logs (`Engine._dispatch`'s MARKET/SIGNAL/ORDER/FILL trace, `tracker/metrics.py`'s equity marks) embed the backtest's simulated bar timestamp, since there it's the one piece of context the record doesn't otherwise carry.
+
 Run at `-v`/`INFO` for a readable trade log; drop to `DEBUG` to retrace *why* a specific bar's decision came out the way it did.
 
 <!-- rtk-instructions v2 -->
