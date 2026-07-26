@@ -31,6 +31,9 @@ def _run_backtest(
     initial_cash: float,
     entry_threshold: float,
     exit_threshold: float,
+    target_vol: float,
+    vol_window: int,
+    max_gross: float,
     stop_loss_pct: float | None,
     take_profit_pct: float | None,
     max_holding_days: int | None,
@@ -41,6 +44,9 @@ def _run_backtest(
         initial_cash=initial_cash,
         entry_threshold=entry_threshold,
         exit_threshold=exit_threshold,
+        target_vol=target_vol,
+        vol_window=vol_window,
+        max_gross=max_gross,
     )
     tracker = PerformanceTracker(portfolio=portfolio)
     risk_manager = PositionExitRiskManager(
@@ -85,6 +91,18 @@ def main() -> None:
     parser.add_argument(
         "--exit-threshold", type=float, default=0.0, help="abs(score) below which a position closes"
     )
+    parser.add_argument(
+        "--target-vol", type=float, default=0.10, help="Annualized portfolio vol ceiling"
+    )
+    parser.add_argument(
+        "--vol-window", type=int, default=20, help="Trailing window for per-ticker vol"
+    )
+    parser.add_argument(
+        "--max-gross", type=float, default=1.0, help="Gross exposure cap (x equity)"
+    )
+    parser.add_argument(
+        "--winsor-limit", type=float, default=3.0, help="Clip the z-score signal to +/- this"
+    )
     parser.add_argument("--stop-loss-pct", type=float, default=None)
     parser.add_argument("--take-profit-pct", type=float, default=None)
     parser.add_argument("--max-holding-days", type=int, default=None)
@@ -100,9 +118,12 @@ def main() -> None:
     data_dir = Path(args.data)
 
     logger.info("Running backtest on %s …", data_dir)
-    risk_kwargs = {
+    run_kwargs = {
         "entry_threshold": args.entry_threshold,
         "exit_threshold": args.exit_threshold,
+        "target_vol": args.target_vol,
+        "vol_window": args.vol_window,
+        "max_gross": args.max_gross,
         "stop_loss_pct": args.stop_loss_pct,
         "take_profit_pct": args.take_profit_pct,
         "max_holding_days": args.max_holding_days,
@@ -110,12 +131,12 @@ def main() -> None:
     strategy_tracker = _run_backtest(
         data_dir,
         args.tickers,
-        ZScoreMovingAverageStrategy(window=args.window),
+        ZScoreMovingAverageStrategy(window=args.window, winsor_limit=args.winsor_limit),
         args.initial_cash,
-        **risk_kwargs,
+        **run_kwargs,
     )
     benchmark_tracker = _run_backtest(
-        data_dir, args.tickers, BuyAndHoldStrategy(), args.initial_cash, **risk_kwargs
+        data_dir, args.tickers, BuyAndHoldStrategy(), args.initial_cash, **run_kwargs
     )
 
     _log_metrics("Strategy", strategy_tracker)

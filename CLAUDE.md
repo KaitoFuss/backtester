@@ -44,7 +44,7 @@ All events are frozen dataclasses forming the `Event = MarketEvent | SignalEvent
 ### Implemented components
 
 - `strategy/`: `ZScoreMovingAverageStrategy` (mean-reversion on z-scored log returns) and `BuyAndHoldStrategy` (equal-weight benchmark).
-- `portfolio/`: `WeightedPortfolio` — sizes positions proportional to signal scores normalized by total absolute score; a score of 0 closes the position, a ticker absent from the signal is held unchanged.
+- `portfolio/`: `WeightedPortfolio` — opens positions with inverse-vol weights (`score / trailing σ`) normalized to the gross still available under `max_gross`, then scales the batch down so projected diagonal book vol ≤ `target_vol` (a ceiling; never levers up). Held positions are never resized (flat→open→flat band trading); a sign flip / sub-`exit_threshold` / zero score closes; an absent ticker is held. Falls back to score-proportional sizing until every relevant ticker has `vol_window` returns.
 - `execution/`: `IdealExecutionHandler` — fills at the current cached price, no slippage or commission.
 - `tracker/`: `PerformanceTracker` (satisfies the `Tracker` protocol; equity curve + metrics) and `plotting.py` (equity/drawdown charts).
 - `risk/`: `PositionExitRiskManager` (satisfies the `RiskManager` protocol) — flattens a position on stop-loss, take-profit, or max-holding-days breach. Stateless: it reads entry price/date/quantity from the `Portfolio` via `PortfolioView` (the `WeightedPortfolio` now records cost basis per position) rather than replaying the fill stream.

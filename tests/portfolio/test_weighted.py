@@ -241,3 +241,84 @@ def test_sign_flip_closes_position_even_above_exit_threshold() -> None:
     assert len(orders) == 1
     assert orders[0].direction == "SELL"
     assert orders[0].quantity == 10
+
+
+class MutablePriceSource:
+    """Price source whose per-ticker price the test advances bar by bar, so the
+    portfolio can accumulate a return history for its vol estimate."""
+
+    def __init__(self, **prices: float) -> None:
+        self._prices = dict(prices)
+
+    def get_price(self, ticker: str) -> float | None:
+        return self._prices.get(ticker)
+
+    def set(self, **prices: float) -> None:
+        self._prices.update(prices)
+
+
+def _warm_and_open(
+    portfolio: WeightedPortfolio,
+    prices: MutablePriceSource,
+    paths: dict[str, list[float]],
+    open_price: dict[str, float],
+    scores: dict[str, float],
+) -> dict[str, int]:
+    """Feed `paths` as zero-score bars (build vol, open nothing), then one bar
+    at `open_price` with real `scores`, returning ticker -> filled-in quantity."""
+    for step in zip(*paths.values(), strict=True):
+        prices.set(**dict(zip(paths, step, strict=True)))
+        portfolio.process_signal(SignalEvent(timestamp=TS, scores=dict.fromkeys(paths, 0.0)))
+    prices.set(**open_price)
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores=scores))
+    return {o.ticker: o.quantity for o in orders}
+
+
+def test_inverse_vol_gives_lower_vol_name_a_bigger_position() -> None:
+    prices = MutablePriceSource(LOWV=100.0, HIGHV=100.0)
+    portfolio = WeightedPortfolio(
+        price_source=prices, initial_cash=1_000_000.0, vol_window=3, target_vol=100.0
+    )
+
+    qty = _warm_and_open(
+        portfolio,
+        prices,
+        {"LOWV": [101.0, 100.0, 101.0], "HIGHV": [120.0, 90.0, 130.0]},
+        open_price={"LOWV": 100.0, "HIGHV": 100.0},
+        scores={"LOWV": 1.0, "HIGHV": 1.0},
+    )
+
+    assert qty["LOWV"] > qty["HIGHV"]
+
+
+def _open_single_ticker_qty(target_vol: float) -> int:
+    prices = MutablePriceSource(AAPL=100.0)
+    portfolio = WeightedPortfolio(
+        price_source=prices,
+        initial_cash=1_000_000.0,
+        vol_window=3,
+        target_vol=target_vol,
+        max_gross=1.0,
+    )
+    qty = _warm_and_open(
+        portfolio,
+        prices,
+        {"AAPL": [102.0, 98.0, 103.0]},
+        open_price={"AAPL": 100.0},
+        scores={"AAPL": 1.0},
+    )
+    return qty.get("AAPL", 0)
+
+
+def test_vol_targeting_scales_the_open_down_when_target_is_tight() -> None:
+    loose = _open_single_ticker_qty(target_vol=100.0)
+    tight = _open_single_ticker_qty(target_vol=0.01)
+
+    # Loose target never binds: full 1x gross -> equity/price = 1_000_000/100.
+    assert loose == 10_000
+    assert 0 < tight < loose
+
+
+def test_gross_is_capped_at_max_gross() -> None:
+    # A non-binding vol target still cannot lever past max_gross (1x here).
+    assert _open_single_ticker_qty(target_vol=100.0) == 10_000

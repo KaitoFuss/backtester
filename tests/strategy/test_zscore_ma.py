@@ -88,3 +88,16 @@ def test_constant_returns_produce_no_score() -> None:
     signals = [strategy.process_market(e) for e in _bars(*closes)]
 
     assert signals[-1].scores == {}
+
+
+def test_winsor_clips_extreme_z_to_limit() -> None:
+    closes = (100.0, 100.0, 100.0, 101.0)  # a jump after flat returns yields |z| > 0.5
+    clipped = ZScoreMovingAverageStrategy(window=3, winsor_limit=0.5)
+    unclipped = ZScoreMovingAverageStrategy(window=3, winsor_limit=100.0)
+
+    for event in _bars(*closes):
+        clipped_signal = clipped.process_market(event)
+        unclipped_signal = unclipped.process_market(event)
+
+    assert clipped_signal.scores["AAPL"] == -0.5
+    assert abs(unclipped_signal.scores["AAPL"]) > 0.5

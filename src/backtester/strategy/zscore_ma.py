@@ -6,8 +6,15 @@ from backtester.core.events import MarketEvent, SignalEvent, Ticker
 
 
 class ZScoreMovingAverageStrategy:
-    def __init__(self, window: int = 20) -> None:
+    """Mean-reversion on z-scored log returns. The z-score is winsorized to
+    ``±winsor_limit`` before it becomes a signal, so an extreme move (often a
+    regime break where the mean-reversion premise no longer holds) is capped
+    rather than sized into linearly. Set ``winsor_limit`` very high to disable.
+    """
+
+    def __init__(self, window: int = 20, winsor_limit: float = 3.0) -> None:
         self._window = window
+        self._winsor_limit = winsor_limit
         self._returns: dict[Ticker, deque[float]] = {}
         self._last_close: dict[Ticker, float] = {}
 
@@ -31,6 +38,7 @@ class ZScoreMovingAverageStrategy:
                 continue
 
             z = (returns[-1] - statistics.fmean(returns)) / stdev
+            z = max(-self._winsor_limit, min(self._winsor_limit, z))
             scores[ticker] = -z
 
         return SignalEvent(timestamp=event.timestamp, scores=scores)
