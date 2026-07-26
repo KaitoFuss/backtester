@@ -4,7 +4,7 @@ from datetime import datetime
 import pytest
 
 from backtester.core.events import FillEvent, SignalEvent
-from backtester.portfolio.weighted import WeightedPortfolio
+from backtester.portfolio.vol_weighted import VolWeightedPortfolio
 
 TS = datetime(2024, 1, 1)
 
@@ -19,11 +19,11 @@ class FakePriceSource:
 
 def test_signal_sizes_orders_proportional_to_score() -> None:
     prices = FakePriceSource({"AAPL": 100.0, "MSFT": 200.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0, "MSFT": -1.0}))
 
-    assert {o.ticker: o for o in orders}.keys() == {"AAPL", "MSFT"}
+    assert {o.ticker for o in orders} == {"AAPL", "MSFT"}
     aapl = next(o for o in orders if o.ticker == "AAPL")
     msft = next(o for o in orders if o.ticker == "MSFT")
     assert aapl.direction == "BUY"
@@ -34,7 +34,7 @@ def test_signal_sizes_orders_proportional_to_score() -> None:
 
 def test_signal_skips_tickers_with_unknown_price() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"MSFT": 1.0}))
 
@@ -43,7 +43,7 @@ def test_signal_skips_tickers_with_unknown_price() -> None:
 
 def test_zero_score_without_position_yields_no_orders() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.0}))
 
@@ -52,7 +52,7 @@ def test_zero_score_without_position_yields_no_orders() -> None:
 
 def test_zero_score_closes_existing_position() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
     )
@@ -65,9 +65,23 @@ def test_zero_score_closes_existing_position() -> None:
     assert orders[0].quantity == 10
 
 
+def test_short_position_closes_with_a_buy() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="SELL", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.0}))
+
+    assert len(orders) == 1
+    assert orders[0].direction == "BUY"
+    assert orders[0].quantity == 10
+
+
 def test_absent_ticker_holds_existing_position() -> None:
     prices = FakePriceSource({"AAPL": 100.0, "MSFT": 200.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="MSFT", quantity=5, direction="BUY", fill_price=200.0)
     )
@@ -79,7 +93,7 @@ def test_absent_ticker_holds_existing_position() -> None:
 
 def test_fill_updates_cash_and_positions() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
 
     portfolio.process_fill(
         FillEvent(
@@ -99,7 +113,7 @@ def test_equity_excludes_position_with_missing_price_and_logs_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
     )
@@ -117,7 +131,7 @@ def test_equity_excludes_position_with_missing_price_and_logs_warning(
 
 def test_get_position_tracks_entry_price_and_date() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
     entry = datetime(2024, 3, 1)
 
     assert portfolio.get_position("AAPL") is None
@@ -135,7 +149,7 @@ def test_get_position_tracks_entry_price_and_date() -> None:
 
 def test_adding_to_position_keeps_original_entry() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
     first, second = datetime(2024, 3, 1), datetime(2024, 3, 8)
     portfolio.process_fill(
         FillEvent(timestamp=first, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
@@ -153,7 +167,7 @@ def test_adding_to_position_keeps_original_entry() -> None:
 
 def test_closing_position_clears_it() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
     )
@@ -166,7 +180,7 @@ def test_closing_position_clears_it() -> None:
 
 def test_no_resize_while_held_even_with_stronger_same_sign_score() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=100.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=100.0)
 
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="AAPL", quantity=1, direction="BUY", fill_price=100.0)
@@ -179,7 +193,9 @@ def test_no_resize_while_held_even_with_stronger_same_sign_score() -> None:
 
 def test_entry_threshold_blocks_weak_signal_when_flat() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0, entry_threshold=0.5)
+    portfolio = VolWeightedPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5
+    )
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.4}))
 
@@ -188,7 +204,9 @@ def test_entry_threshold_blocks_weak_signal_when_flat() -> None:
 
 def test_entry_threshold_opens_position_once_crossed() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0, entry_threshold=0.5)
+    portfolio = VolWeightedPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5
+    )
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.6}))
 
@@ -199,7 +217,7 @@ def test_entry_threshold_opens_position_once_crossed() -> None:
 
 def test_no_resize_while_held_with_banding_enabled() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(
+    portfolio = VolWeightedPortfolio(
         price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
     )
     portfolio.process_fill(
@@ -213,7 +231,7 @@ def test_no_resize_while_held_with_banding_enabled() -> None:
 
 def test_exit_threshold_closes_on_weak_signal() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(
+    portfolio = VolWeightedPortfolio(
         price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
     )
     portfolio.process_fill(
@@ -229,7 +247,7 @@ def test_exit_threshold_closes_on_weak_signal() -> None:
 
 def test_sign_flip_closes_position_even_above_exit_threshold() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = WeightedPortfolio(
+    portfolio = VolWeightedPortfolio(
         price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
     )
     portfolio.process_fill(
@@ -258,7 +276,7 @@ class MutablePriceSource:
 
 
 def _warm_and_open(
-    portfolio: WeightedPortfolio,
+    portfolio: VolWeightedPortfolio,
     prices: MutablePriceSource,
     paths: dict[str, list[float]],
     open_price: dict[str, float],
@@ -276,9 +294,7 @@ def _warm_and_open(
 
 def test_inverse_vol_gives_lower_vol_name_a_bigger_position() -> None:
     prices = MutablePriceSource(LOWV=100.0, HIGHV=100.0)
-    portfolio = WeightedPortfolio(
-        price_source=prices, initial_cash=1_000_000.0, vol_window=3, target_vol=100.0
-    )
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=1_000_000.0, vol_window=3)
 
     qty = _warm_and_open(
         portfolio,
@@ -291,14 +307,12 @@ def test_inverse_vol_gives_lower_vol_name_a_bigger_position() -> None:
     assert qty["LOWV"] > qty["HIGHV"]
 
 
-def _open_single_ticker_qty(target_vol: float) -> int:
+def test_single_open_uses_full_gross_budget() -> None:
+    # One candidate always takes the whole available budget: inverse-vol
+    # normalization cancels, so qty = max_gross * equity / price.
     prices = MutablePriceSource(AAPL=100.0)
-    portfolio = WeightedPortfolio(
-        price_source=prices,
-        initial_cash=1_000_000.0,
-        vol_window=3,
-        target_vol=target_vol,
-        max_gross=1.0,
+    portfolio = VolWeightedPortfolio(
+        price_source=prices, initial_cash=1_000_000.0, vol_window=3, max_gross=1.0
     )
     qty = _warm_and_open(
         portfolio,
@@ -307,18 +321,34 @@ def _open_single_ticker_qty(target_vol: float) -> int:
         open_price={"AAPL": 100.0},
         scores={"AAPL": 1.0},
     )
-    return qty.get("AAPL", 0)
+    assert qty["AAPL"] == 10_000
 
 
-def test_vol_targeting_scales_the_open_down_when_target_is_tight() -> None:
-    loose = _open_single_ticker_qty(target_vol=100.0)
-    tight = _open_single_ticker_qty(target_vol=0.01)
+def test_max_gross_scales_the_open_up_to_the_leverage_limit() -> None:
+    prices = MutablePriceSource(AAPL=100.0)
+    portfolio = VolWeightedPortfolio(
+        price_source=prices, initial_cash=1_000_000.0, vol_window=3, max_gross=2.0
+    )
+    qty = _warm_and_open(
+        portfolio,
+        prices,
+        {"AAPL": [102.0, 98.0, 103.0]},
+        open_price={"AAPL": 100.0},
+        scores={"AAPL": 1.0},
+    )
+    # 2x leverage on $1M equity at $100 -> 20_000 shares of gross exposure.
+    assert qty["AAPL"] == 20_000
 
-    # Loose target never binds: full 1x gross -> equity/price = 1_000_000/100.
-    assert loose == 10_000
-    assert 0 < tight < loose
 
+def test_held_position_shrinks_budget_for_a_new_open() -> None:
+    prices = FakePriceSource({"AAPL": 100.0, "MSFT": 100.0})
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0, max_gross=1.0)
+    # Hold 60 shares of AAPL = $6000 = 60% of equity; 40% gross budget remains.
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=60, direction="BUY", fill_price=100.0)
+    )
 
-def test_gross_is_capped_at_max_gross() -> None:
-    # A non-binding vol target still cannot lever past max_gross (1x here).
-    assert _open_single_ticker_qty(target_vol=100.0) == 10_000
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"MSFT": 1.0}))
+
+    msft = next(o for o in orders if o.ticker == "MSFT")
+    assert msft.quantity == round(0.4 * 10_000.0 / 100.0)

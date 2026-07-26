@@ -14,8 +14,10 @@ from pathlib import Path
 from backtester.core.engine import Engine, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
-from backtester.portfolio.weighted import WeightedPortfolio
+from backtester.portfolio.vol_weighted import VolWeightedPortfolio
+from backtester.risk.chain import ChainedRiskManager
 from backtester.risk.exits import PositionExitRiskManager
+from backtester.risk.leverage import LeverageRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
 from backtester.tracker.metrics import PerformanceTracker
@@ -31,7 +33,6 @@ def _run_backtest(
     initial_cash: float,
     entry_threshold: float,
     exit_threshold: float,
-    target_vol: float,
     vol_window: int,
     max_gross: float,
     stop_loss_pct: float | None,
@@ -39,21 +40,25 @@ def _run_backtest(
     max_holding_days: int | None,
 ) -> PerformanceTracker:
     market_data = ParquetMarketData(data_dir, tickers=tickers)
-    portfolio = WeightedPortfolio(
+    portfolio = VolWeightedPortfolio(
         price_source=market_data,
         initial_cash=initial_cash,
         entry_threshold=entry_threshold,
         exit_threshold=exit_threshold,
-        target_vol=target_vol,
         vol_window=vol_window,
         max_gross=max_gross,
     )
     tracker = PerformanceTracker(portfolio=portfolio)
-    risk_manager = PositionExitRiskManager(
-        portfolio=portfolio,
-        stop_loss_pct=stop_loss_pct,
-        take_profit_pct=take_profit_pct,
-        max_holding_days=max_holding_days,
+    risk_manager = ChainedRiskManager(
+        [
+            PositionExitRiskManager(
+                portfolio=portfolio,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+                max_holding_days=max_holding_days,
+            ),
+            LeverageRiskManager(portfolio=portfolio, max_gross=max_gross),
+        ]
     )
 
     engine = Engine(
@@ -92,13 +97,13 @@ def main() -> None:
         "--exit-threshold", type=float, default=0.0, help="abs(score) below which a position closes"
     )
     parser.add_argument(
-        "--target-vol", type=float, default=0.10, help="Annualized portfolio vol ceiling"
-    )
-    parser.add_argument(
         "--vol-window", type=int, default=20, help="Trailing window for per-ticker vol"
     )
     parser.add_argument(
-        "--max-gross", type=float, default=1.0, help="Gross exposure cap (x equity)"
+        "--max-gross",
+        type=float,
+        default=1.0,
+        help="Leverage limit: gross exposure as a multiple of equity (1.0 = fully invested)",
     )
     parser.add_argument(
         "--winsor-limit", type=float, default=3.0, help="Clip the z-score signal to +/- this"
@@ -121,7 +126,6 @@ def main() -> None:
     run_kwargs = {
         "entry_threshold": args.entry_threshold,
         "exit_threshold": args.exit_threshold,
-        "target_vol": args.target_vol,
         "vol_window": args.vol_window,
         "max_gross": args.max_gross,
         "stop_loss_pct": args.stop_loss_pct,

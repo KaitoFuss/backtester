@@ -28,6 +28,21 @@ def test_bar_frozen():
         bar.close = 200.0  # type: ignore[misc]
 
 
+@pytest.mark.parametrize("field", ["close", "open", "high", "low"])
+def test_bar_rejects_non_positive_price(field: str) -> None:
+    with pytest.raises(ValueError, match=f"Bar.{field}"):
+        Bar(**{"close": 100.0, field: 0.0})
+
+
+def test_bar_rejects_negative_volume() -> None:
+    with pytest.raises(ValueError, match="volume"):
+        Bar(close=100.0, volume=-1.0)
+
+
+def test_bar_allows_zero_volume() -> None:
+    assert Bar(close=100.0, volume=0.0).volume == 0.0
+
+
 def test_market_event_type():
     event = MarketEvent(timestamp=TS, bars={"AAPL": Bar(close=150.0)})
     assert event.type == "MARKET"
@@ -43,7 +58,7 @@ def test_market_event_frozen():
 def test_market_event_bars_immutable():
     event = MarketEvent(timestamp=TS, bars={"AAPL": Bar(close=150.0)})
     with pytest.raises(TypeError):
-        event.bars["AAPL"] = Bar(close=0.0)  # type: ignore[index]
+        event.bars["AAPL"] = Bar(close=200.0)  # type: ignore[index]
 
 
 def test_signal_event_type():
