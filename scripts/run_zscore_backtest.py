@@ -1,17 +1,18 @@
 """Run the z-score mean-reversion strategy against locally fetched Parquet data,
-alongside a buy-and-hold benchmark, and print first-pass performance metrics.
+alongside a buy-and-hold benchmark, and write a performance report PDF.
 
 Usage:
-    uv run scripts/run_zscore_backtest.py --data data/raw --tickers AAPL MSFT
+    uv run scripts/run_zscore_backtest.py configs/zscore_backtest.json
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from backtester.config import BacktestConfig
 from backtester.core.engine import Engine, Portfolio, PriceSource, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
@@ -21,7 +22,8 @@ from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
 from backtester.tracker.metrics import PerformanceTracker
-from backtester.tracker.plotting import plot_equity_curve
+from backtester.tracker.report import save_report
+from backtester.tracker.reporting import monthly_returns_table, strategy_correlation_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -60,104 +62,61 @@ def _run_backtest(
     return tracker
 
 
-def _log_metrics(label: str, tracker: PerformanceTracker) -> None:
-    metrics = tracker.metrics()
-    logger.info("=== %s ===", label)
-    logger.info("Bars processed:      %d", len(tracker.mark_to_market_history))
-    logger.info("Total return:        %s", f"{metrics.total_return:.2%}")
-    logger.info("Annualized return:   %s", f"{metrics.annualized_return:.2%}")
-    logger.info("Annualized vol:      %s", f"{metrics.annualized_vol:.2%}")
-    logger.info("Sharpe (rf=0):       %.2f", metrics.sharpe)
-    logger.info("Max drawdown:        %s", f"{metrics.max_drawdown:.2%}")
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run z-score mean-reversion backtest")
-    parser.add_argument("--data", required=True, help="Directory of daily Parquet files")
-    parser.add_argument("--tickers", nargs="+", default=None)
-    parser.add_argument("--window", type=int, default=20, help="Z-score lookback window")
-    parser.add_argument("--initial-cash", type=float, default=100_000.0)
-    parser.add_argument(
-        "--entry-threshold", type=float, default=0.0, help="abs(score) required to open a position"
-    )
-    parser.add_argument(
-        "--exit-threshold", type=float, default=0.0, help="abs(score) below which a position closes"
-    )
-    parser.add_argument(
-        "--vol-window", type=int, default=20, help="Trailing window for per-ticker vol"
-    )
-    parser.add_argument(
-        "--max-gross",
-        type=float,
-        default=1.0,
-        help="Leverage limit: gross exposure as a multiple of equity (1.0 = fully invested)",
-    )
-    parser.add_argument(
-        "--target-vol",
-        type=float,
-        default=0.2,
-        help="Target annualized vol contribution per unit conviction (vol-weighted strategy only)",
-    )
-    parser.add_argument(
-        "--winsor-limit", type=float, default=3.0, help="Clip the z-score signal to +/- this"
-    )
-    parser.add_argument("--stop-loss-pct", type=float, default=None)
-    parser.add_argument("--take-profit-pct", type=float, default=None)
-    parser.add_argument("--max-holding-days", type=int, default=None)
-    parser.add_argument(
-        "--plot-dir",
-        default="output",
-        help="Root directory for plots; a per-strategy subfolder is created under it",
-    )
-    args = parser.parse_args()
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: run_zscore_backtest.py <config.json>")
+    config = BacktestConfig.from_json(Path(sys.argv[1]))
+
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s"
     )
-    data_dir = Path(args.data)
+    data_dir = Path(config.data)
 
     logger.info("Running backtest on %s …", data_dir)
-    risk_kwargs = {
-        "stop_loss_pct": args.stop_loss_pct,
-        "take_profit_pct": args.take_profit_pct,
-        "max_holding_days": args.max_holding_days,
-    }
     strategy_tracker = _run_backtest(
         data_dir,
-        args.tickers,
-        ZScoreMovingAverageStrategy(window=args.window, winsor_limit=args.winsor_limit),
+        config.tickers,
+        ZScoreMovingAverageStrategy(window=config.window, winsor_limit=config.winsor_limit),
         lambda price_source: VolWeightedPortfolio(
             price_source=price_source,
-            initial_cash=args.initial_cash,
-            entry_threshold=args.entry_threshold,
-            exit_threshold=args.exit_threshold,
-            vol_window=args.vol_window,
-            max_gross=args.max_gross,
-            target_vol=args.target_vol,
+            initial_cash=config.initial_cash,
+            entry_threshold=config.entry_threshold,
+            exit_threshold=config.exit_threshold,
+            vol_window=config.vol_window,
+            max_gross=config.max_gross,
+            target_vol=config.target_vol,
         ),
-        **risk_kwargs,
+        stop_loss_pct=config.stop_loss_pct,
+        take_profit_pct=config.take_profit_pct,
+        max_holding_days=config.max_holding_days,
     )
     benchmark_tracker = _run_backtest(
         data_dir,
-        args.tickers,
+        config.tickers,
         BuyAndHoldStrategy(),
         lambda price_source: ScoreProportionalPortfolio(
-            price_source=price_source, initial_cash=args.initial_cash, max_gross=args.max_gross
+            price_source=price_source, initial_cash=config.initial_cash, max_gross=config.max_gross
         ),
-        **risk_kwargs,
+        stop_loss_pct=config.stop_loss_pct,
+        take_profit_pct=config.take_profit_pct,
+        max_holding_days=config.max_holding_days,
     )
 
-    _log_metrics("Strategy", strategy_tracker)
-    _log_metrics("Buy & Hold", benchmark_tracker)
+    trackers = {"Strategy": strategy_tracker, "Buy & Hold": benchmark_tracker}
+    histories = {label: tracker.mark_to_market_history for label, tracker in trackers.items()}
 
-    plot_dir = Path(args.plot_dir) / "zscore_ma"
-    plot_equity_curve(
-        {
-            "Strategy": strategy_tracker.mark_to_market_history,
-            "Buy & Hold": benchmark_tracker.mark_to_market_history,
+    report_path = save_report(
+        output_dir=Path(config.output_dir) / "zscore_ma",
+        histories=histories,
+        metrics={label: tracker.metrics() for label, tracker in trackers.items()},
+        trade_metrics={label: tracker.trade_metrics() for label, tracker in trackers.items()},
+        monthly_tables={
+            label: monthly_returns_table(history) for label, history in histories.items()
         },
-        plot_dir / "equity_curve.png",
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
     )
-    logger.info("Plots written to %s/", plot_dir)
+    logger.info("Report written to %s", report_path)
 
 
 if __name__ == "__main__":
