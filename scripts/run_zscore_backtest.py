@@ -13,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from backtester.config import BacktestConfig
-from backtester.core.engine import Engine, Portfolio, PriceSource, Strategy
+from backtester.core.engine import Engine, Portfolio, PriceSource, RiskManager, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
 from backtester.portfolio.score_proportional import ScoreProportionalPortfolio
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 PortfolioFactory = Callable[[PriceSource], Portfolio]
+RiskManagerFactory = Callable[[Portfolio], RiskManager | None]
 
 
 def _run_backtest(
@@ -36,19 +37,12 @@ def _run_backtest(
     tickers: list[str] | None,
     strategy: Strategy,
     portfolio_factory: PortfolioFactory,
-    stop_loss_pct: float | None,
-    take_profit_pct: float | None,
-    max_holding_days: int | None,
+    risk_manager_factory: RiskManagerFactory,
 ) -> PerformanceTracker:
     market_data = ParquetMarketData(data_dir, tickers=tickers)
     portfolio = portfolio_factory(market_data)
     tracker = PerformanceTracker(portfolio=portfolio)
-    risk_manager = PositionExitRiskManager(
-        portfolio=portfolio,
-        stop_loss_pct=stop_loss_pct,
-        take_profit_pct=take_profit_pct,
-        max_holding_days=max_holding_days,
-    )
+    risk_manager = risk_manager_factory(portfolio)
 
     engine = Engine(
         data_handler=market_data,
@@ -86,10 +80,16 @@ def main() -> None:
             max_gross=config.max_gross,
             target_vol=config.target_vol,
         ),
-        stop_loss_pct=config.stop_loss_pct,
-        take_profit_pct=config.take_profit_pct,
-        max_holding_days=config.max_holding_days,
+        lambda portfolio: PositionExitRiskManager(
+            portfolio=portfolio,
+            stop_loss_pct=config.stop_loss_pct,
+            take_profit_pct=config.take_profit_pct,
+            max_holding_days=config.max_holding_days,
+        ),
     )
+    # Buy & Hold is a passive reference, not a strategy under test — it never
+    # exits, so none of the strategy's risk-exit config (stop-loss,
+    # take-profit, max-holding-days) applies to it.
     benchmark_tracker = _run_backtest(
         data_dir,
         config.tickers,
@@ -97,9 +97,7 @@ def main() -> None:
         lambda price_source: ScoreProportionalPortfolio(
             price_source=price_source, initial_cash=config.initial_cash, max_gross=config.max_gross
         ),
-        stop_loss_pct=config.stop_loss_pct,
-        take_profit_pct=config.take_profit_pct,
-        max_holding_days=config.max_holding_days,
+        lambda portfolio: None,
     )
 
     trackers = {"Strategy": strategy_tracker, "Buy & Hold": benchmark_tracker}
