@@ -69,13 +69,34 @@ def partition_signal(
         current_qty = position.quantity if position else 0
         if current_qty == 0:
             if score == 0 or abs(score) < entry_threshold:
+                logger.debug(
+                    "%s: score=%.3f below entry_threshold=%.3f, no open",
+                    ticker,
+                    score,
+                    entry_threshold,
+                )
                 continue
             open_candidates.append((ticker, score, price))
+            logger.debug("%s: open candidate, score=%.3f price=%.4f", ticker, score, price)
         else:
             held_sign = 1 if current_qty > 0 else -1
             score_sign = (score > 0) - (score < 0)
-            should_close = score == 0 or score_sign != held_sign or abs(score) < exit_threshold
-            if should_close:
+            if score == 0:
+                reason = "score is zero"
+            elif score_sign != held_sign:
+                reason = "score sign flipped against held position"
+            elif abs(score) < exit_threshold:
+                reason = f"score={score:.3f} below exit_threshold={exit_threshold:.3f}"
+            else:
+                reason = None
+            if reason is not None:
+                logger.info(
+                    "%s: closing %s%d (%s)",
+                    ticker,
+                    "SELL " if current_qty > 0 else "BUY ",
+                    abs(current_qty),
+                    reason,
+                )
                 close_orders.append(
                     OrderEvent(
                         timestamp=timestamp,
@@ -99,10 +120,22 @@ def size_to_orders(
     orders: list[OrderEvent] = []
     for ticker, _, price in candidates:
         if ticker not in weights:
+            logger.debug("%s: no weight assigned, skipping open", ticker)
             continue
         qty = round(weights[ticker] * equity / price)
         if qty == 0:
+            logger.debug(
+                "%s: weight=%.5f rounds to 0 shares, skipping open", ticker, weights[ticker]
+            )
             continue
+        logger.debug(
+            "%s: opening %s%d @ %.4f (weight=%.5f)",
+            ticker,
+            "BUY " if qty > 0 else "SELL ",
+            abs(qty),
+            price,
+            weights[ticker],
+        )
         orders.append(
             OrderEvent(
                 timestamp=timestamp,

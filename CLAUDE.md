@@ -51,6 +51,17 @@ All events are frozen dataclasses forming the `Event = MarketEvent | SignalEvent
 
 `scripts/run_zscore_backtest.py` shows the full wiring. See `NOTES.md` sections 4–8 for the remaining open design questions (slippage/commission model, risk checks, richer performance metrics).
 
+### Logging conventions
+
+Every module that makes a trading decision logs it, at a level chosen so `INFO` alone reads as a clean trade blotter and `DEBUG` adds the full numeric trail behind each entry. Each module gets its own `logger = logging.getLogger(__name__)`; never add a function parameter or return value just to thread a logger or a log message through — log with whatever the function already has in scope.
+
+- **DEBUG** — high-volume, per-bar/per-ticker computation: raw scores, vol estimates, threshold checks, warm-up progress, individual order fills, the MARKET → SIGNAL → ORDER → FILL pipeline in `Engine._dispatch`.
+- **INFO** — state-changing or otherwise notable decisions: a position opened or closed (with the reason — sign flip, threshold, zero score), a risk exit (stop-loss/take-profit/max-holding), a gross-budget scale-down, a new ticker entering a strategy's universe, run start/end summaries, end-of-run liquidation.
+- **WARNING** — data went missing where it was expected (e.g. no price for a held position when marking equity).
+- **ERROR** — an order genuinely can't be filled (e.g. no price available at all).
+
+Run at `-v`/`INFO` for a readable trade log; drop to `DEBUG` to retrace *why* a specific bar's decision came out the way it did.
+
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
 

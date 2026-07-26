@@ -1,3 +1,4 @@
+import logging
 import math
 import statistics
 from collections import deque
@@ -12,6 +13,8 @@ from backtester.portfolio.utils import (
     partition_signal,
     size_to_orders,
 )
+
+logger = logging.getLogger(__name__)
 
 TRADING_DAYS_PER_YEAR = 252
 
@@ -87,6 +90,13 @@ class VolWeightedPortfolio:
             if prev is not None:
                 returns = self._returns.setdefault(ticker, deque(maxlen=self._vol_window))
                 returns.append(math.log(price / prev))
+                logger.debug(
+                    "%s: return=%.5f window=%d/%d",
+                    ticker,
+                    returns[-1],
+                    len(returns),
+                    self._vol_window,
+                )
 
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
         # Update returns for tickers in this signal AND ones we currently hold,
@@ -122,8 +132,16 @@ class VolWeightedPortfolio:
         candidate_vols: dict[Ticker, float] = {}
         for ticker, _, _ in candidates:
             vol = annualized_vol(self._returns.get(ticker), self._vol_window)
-            if vol is not None:
+            if vol is None:
+                logger.debug(
+                    "%s: vol not ready (%d/%d returns), skipping open",
+                    ticker,
+                    len(self._returns.get(ticker, [])),
+                    self._vol_window,
+                )
+            else:
                 candidate_vols[ticker] = vol
+                logger.debug("%s: annualized_vol=%.4f", ticker, vol)
 
         raw = {
             ticker: score * self._target_vol / candidate_vols[ticker]
@@ -148,6 +166,13 @@ class VolWeightedPortfolio:
         # target_vol sets each name's target size directly; only scale the
         # whole batch down if it would breach the budget, never up to fill it.
         scale = min(1.0, available / total_abs_raw)
+        if scale < 1.0:
+            logger.info(
+                "Gross budget %.4f < requested %.4f, scaling opens by %.3f",
+                available,
+                total_abs_raw,
+                scale,
+            )
         weights = {ticker: r * scale for ticker, r in raw.items()}
         return size_to_orders(weights, candidates, equity, event.timestamp)
 

@@ -46,6 +46,7 @@ class PositionExitRiskManager:
 
             reason = self._breach_reason(position, bar.close, event.timestamp)
             if reason is None:
+                logger.debug("%s: no risk breach (close=%.4f)", ticker, bar.close)
                 continue
 
             logger.info("Risk exit for %s: %s (close=%.4f)", ticker, reason, bar.close)

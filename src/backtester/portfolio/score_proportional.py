@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Sequence
 
 from backtester.core.engine import PriceSource
@@ -9,6 +10,8 @@ from backtester.portfolio.utils import (
     partition_signal,
     size_to_orders,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ScoreProportionalPortfolio:
@@ -88,6 +91,12 @@ class ScoreProportionalPortfolio:
         )
         if available == 0.0:
             return []
+        if available < self._max_gross:
+            logger.info(
+                "Gross budget reduced to %.4f (max_gross=%.4f) by existing positions",
+                available,
+                self._max_gross,
+            )
 
         weights = {ticker: score / total_abs_score * available for ticker, score, _ in candidates}
         return size_to_orders(weights, candidates, equity, event.timestamp)

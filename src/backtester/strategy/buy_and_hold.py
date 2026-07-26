@@ -1,4 +1,8 @@
+import logging
+
 from backtester.core.events import MarketEvent, SignalEvent, Ticker
+
+logger = logging.getLogger(__name__)
 
 
 class BuyAndHoldStrategy:
@@ -19,6 +23,7 @@ class BuyAndHoldStrategy:
         new_tickers = event.bars.keys() - self._known
         if not new_tickers:
             return SignalEvent(timestamp=event.timestamp, scores={})
+        logger.info("%s: adding %s to held universe", event.timestamp, sorted(new_tickers))
         self._known |= new_tickers
         scores = dict.fromkeys(self._known, 1.0)
         return SignalEvent(timestamp=event.timestamp, scores=scores)
