@@ -1,0 +1,12 @@
+{
+  "data": "data/raw",
+  "tickers": ["AAPL", "MSFT"],
+  "window": 20,
+  "initial_cash": 100000.0,
+  "entry_threshold": 0.0,
+  "exit_threshold": 0.0,
+  "stop_loss_pct": null,
+  "take_profit_pct": null,
+  "max_holding_days": null,
+  "plot_dir": "output"
+}
