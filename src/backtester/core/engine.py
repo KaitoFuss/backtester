@@ -34,7 +34,7 @@ class Strategy(Protocol):
 
 class Portfolio(Protocol):
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]: ...
-    def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]: ...
+    def process_fill(self, event: FillEvent) -> None: ...
 
 
 class ExecutionHandler(Protocol):
@@ -100,7 +100,7 @@ class Engine:
             case FillEvent():
                 if self._tracker is not None:
                     self._tracker.track_fill(event)
-                self._put_all(self._portfolio.process_fill(event))
+                self._portfolio.process_fill(event)
             case _:
                 raise NotImplementedError(f"unhandled event type: {event!r}")
 

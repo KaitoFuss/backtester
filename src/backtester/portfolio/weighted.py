@@ -92,7 +92,7 @@ class WeightedPortfolio:
             )
         return orders
 
-    def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
+    def process_fill(self, event: FillEvent) -> None:
         signed_delta = event.quantity if event.direction == "BUY" else -event.quantity
         self._cash -= signed_delta * event.fill_price + event.commission
 
@@ -113,4 +113,3 @@ class WeightedPortfolio:
         else:
             # Adding to an existing position keeps its original entry price/date.
             self._positions[event.ticker] = replace(prior, quantity=new_qty)
-        return []

@@ -57,9 +57,8 @@ class StubPortfolio:
             if s > 0
         ]
 
-    def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
+    def process_fill(self, event: FillEvent) -> None:
         self.fills.append(event)
-        return []
 
 
 class StubExecutionHandler:
@@ -143,28 +142,6 @@ def test_full_pipeline() -> None:
     assert execution.orders[0].ticker == "AAPL"
     assert len(portfolio.fills) == 1
     assert portfolio.fills[0].ticker == "AAPL"
-
-
-def test_fill_orders_dispatched() -> None:
-    """Orders returned by process_fill are dispatched back through the execution handler."""
-
-    class HedgingPortfolio(StubPortfolio):
-        def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
-            self.fills.append(event)
-            if event.ticker == "AAPL":
-                return [
-                    OrderEvent(
-                        timestamp=event.timestamp, ticker="SPY", quantity=50, direction="SELL"
-                    )
-                ]
-            return []
-
-    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
-    strategy, portfolio, execution = StubStrategy(), HedgingPortfolio(), StubExecutionHandler()
-
-    _make_engine([market], strategy, portfolio, execution).run()
-
-    assert [o.ticker for o in execution.orders] == ["AAPL", "SPY"]
 
 
 def test_engine_processes_multiple_bars() -> None:
