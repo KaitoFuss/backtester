@@ -1,7 +1,14 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from backtester.core.events import Event, FillEvent, MarketEvent, OrderEvent, SignalEvent
+from backtester.core.events import (
+    Event,
+    FillEvent,
+    MarketEvent,
+    OrderEvent,
+    Position,
+    SignalEvent,
+)
 from backtester.core.queue import EventQueue
 
 
@@ -11,6 +18,10 @@ class DataHandler(Protocol):
 
 class PriceSource(Protocol):
     def get_price(self, ticker: str) -> float | None: ...
+
+
+class PositionSource(Protocol):
+    def get_position(self, ticker: str) -> Position | None: ...
 
 
 class PortfolioValuer(Protocol):
@@ -31,8 +42,9 @@ class ExecutionHandler(Protocol):
 
 
 class RiskManager(Protocol):
-    def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]: ...
-    def on_fill(self, event: FillEvent) -> None: ...
+    def reconcile(
+        self, event: MarketEvent, orders: Sequence[OrderEvent]
+    ) -> Sequence[OrderEvent]: ...
 
 
 class Observer(Protocol):
@@ -65,35 +77,29 @@ class Engine:
     def _handle_market(self, event: MarketEvent) -> None:
         if self._observer is not None:
             self._observer.evaluate_market(event)
-        if self._risk_manager is not None:
-            for order in self._risk_manager.on_market(event):
-                self._execute_immediately(order)
-        self._put_all(self._strategy.process_market(event))
 
-    def _execute_immediately(self, order: OrderEvent) -> None:
-        """Runs an order to completion right now (order -> fill -> portfolio
-        update), bypassing the queue, so a risk-driven exit is fully resolved
-        before the strategy or anything else acts on this bar."""
-        for fill in self._execution_handler.process_order(order):
-            if self._observer is not None:
-                self._observer.evaluate_fill(fill)
-            if self._risk_manager is not None:
-                self._risk_manager.on_fill(fill)
-            self._put_all(self._portfolio.process_fill(fill))
+        orders: list[OrderEvent] = []
+        for signal in self._strategy.process_market(event):
+            orders.extend(self._portfolio.process_signal(signal))
+
+        # The risk manager sees the full strategy order batch and returns the
+        # final set to trade: it drops strategy orders on tickers it is exiting
+        # and appends its own exit orders (risk beats strategy). The result
+        # flows through the queue to the execution handler like any other order.
+        if self._risk_manager is not None:
+            orders = list(self._risk_manager.reconcile(event, orders))
+
+        self._put_all(orders)
 
     def _dispatch(self, event: Event) -> None:
         match event:
             case MarketEvent():
                 self._handle_market(event)
-            case SignalEvent():
-                self._put_all(self._portfolio.process_signal(event))
             case OrderEvent():
                 self._put_all(self._execution_handler.process_order(event))
             case FillEvent():
                 if self._observer is not None:
                     self._observer.evaluate_fill(event)
-                if self._risk_manager is not None:
-                    self._risk_manager.on_fill(event)
                 self._put_all(self._portfolio.process_fill(event))
             case _:
                 raise NotImplementedError(f"unhandled event type: {event!r}")

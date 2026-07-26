@@ -44,6 +44,7 @@ def _run_backtest(
     )
     tracker = PerformanceTracker(portfolio=portfolio)
     risk_manager = PositionExitRiskManager(
+        position_source=portfolio,
         stop_loss_pct=stop_loss_pct,
         take_profit_pct=take_profit_pct,
         max_holding_days=max_holding_days,

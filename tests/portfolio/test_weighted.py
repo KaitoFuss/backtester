@@ -115,6 +115,55 @@ def test_equity_excludes_position_with_missing_price_and_logs_warning(
     assert "MSFT" in caplog.text
 
 
+def test_get_position_tracks_entry_price_and_date() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    entry = datetime(2024, 3, 1)
+
+    assert portfolio.get_position("AAPL") is None
+
+    portfolio.process_fill(
+        FillEvent(timestamp=entry, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+
+    position = portfolio.get_position("AAPL")
+    assert position is not None
+    assert position.quantity == 10
+    assert position.entry_price == 100.0
+    assert position.entry_date == entry
+
+
+def test_adding_to_position_keeps_original_entry() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    first, second = datetime(2024, 3, 1), datetime(2024, 3, 8)
+    portfolio.process_fill(
+        FillEvent(timestamp=first, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=second, ticker="AAPL", quantity=5, direction="BUY", fill_price=200.0)
+    )
+
+    position = portfolio.get_position("AAPL")
+    assert position is not None
+    assert position.quantity == 15
+    assert position.entry_price == 100.0
+    assert position.entry_date == first
+
+
+def test_closing_position_clears_it() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = WeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="SELL", fill_price=100.0)
+    )
+
+    assert portfolio.get_position("AAPL") is None
+
+
 def test_no_resize_while_held_even_with_stronger_same_sign_score() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
     portfolio = WeightedPortfolio(price_source=prices, initial_cash=100.0)

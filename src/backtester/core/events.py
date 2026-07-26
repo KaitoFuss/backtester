@@ -17,6 +17,14 @@ class Bar:
 
 
 @dataclass(frozen=True)
+class Position:
+    ticker: Ticker
+    quantity: int
+    entry_price: float
+    entry_date: datetime
+
+
+@dataclass(frozen=True)
 class MarketEvent:
     timestamp: datetime
     bars: Mapping[Ticker, Bar]

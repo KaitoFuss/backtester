@@ -87,16 +87,16 @@ class StubExecutionHandler:
 
 
 class RecordingRiskManager:
+    """Passes every order batch through untouched, recording what it saw."""
+
     def __init__(self) -> None:
-        self.observed: list[FillEvent] = []
         self.market_events: list[MarketEvent] = []
+        self.received_orders: list[list[OrderEvent]] = []
 
-    def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
+    def reconcile(self, event: MarketEvent, orders: Sequence[OrderEvent]) -> Sequence[OrderEvent]:
         self.market_events.append(event)
-        return []
-
-    def on_fill(self, event: FillEvent) -> None:
-        self.observed.append(event)
+        self.received_orders.append(list(orders))
+        return orders
 
 
 class StubObserver:
@@ -191,33 +191,19 @@ def test_engine_stops_when_data_exhausted() -> None:
     assert strategy.received == []
 
 
-def test_risk_manager_evaluates_fills() -> None:
+def test_risk_manager_sees_strategy_order_batch() -> None:
+    """The risk manager reconciles the strategy's order batch each bar."""
     market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
     risk = RecordingRiskManager()
 
     _make_engine([market], strategy, portfolio, execution, risk_manager=risk).run()
 
-    assert len(risk.observed) == 1
-    assert risk.observed[0].ticker == "AAPL"
+    assert risk.market_events == [market]
+    assert [o.ticker for o in risk.received_orders[0]] == ["AAPL"]
 
 
-def test_risk_manager_evaluates_fills_across_bars() -> None:
-    ts2 = datetime(2024, 1, 2)
-    bars = [
-        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
-        MarketEvent(timestamp=ts2, bars={"AAPL": Bar(close=155.0)}),
-    ]
-    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
-    risk = RecordingRiskManager()
-
-    _make_engine(bars, strategy, portfolio, execution, risk_manager=risk).run()
-
-    assert len(risk.observed) == 2
-    assert [f.ticker for f in risk.observed] == ["AAPL", "AAPL"]
-
-
-def test_risk_manager_evaluates_market_events_per_bar() -> None:
+def test_risk_manager_reconciles_every_bar() -> None:
     ts2 = datetime(2024, 1, 2)
     bars = [
         MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
@@ -231,35 +217,6 @@ def test_risk_manager_evaluates_market_events_per_bar() -> None:
     assert risk.market_events == bars
 
 
-def test_risk_manager_accumulates_metrics() -> None:
-    """A stateful RiskManager can track running totals across fills."""
-
-    class CostTracker:
-        def __init__(self) -> None:
-            self.total_commission: float = 0.0
-            self.total_slippage: float = 0.0
-
-        def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
-            return []
-
-        def on_fill(self, event: FillEvent) -> None:
-            self.total_commission += event.commission
-            self.total_slippage += event.slippage
-
-    ts2 = datetime(2024, 1, 2)
-    bars = [
-        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
-        MarketEvent(timestamp=ts2, bars={"AAPL": Bar(close=155.0)}),
-    ]
-    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
-    tracker = CostTracker()
-
-    _make_engine(bars, strategy, portfolio, execution, risk_manager=tracker).run()
-
-    assert tracker.total_commission == StubExecutionHandler.COMMISSION * 2
-    assert tracker.total_slippage == StubExecutionHandler.SLIPPAGE * 2
-
-
 def test_engine_runs_without_risk_manager() -> None:
     market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
@@ -268,7 +225,7 @@ def test_engine_runs_without_risk_manager() -> None:
 
 
 def test_risk_manager_and_observer_run_independently() -> None:
-    """Both slots can be wired at once: observer observes, risk manager still emits."""
+    """Both slots can be wired at once: observer observes fills, risk reconciles orders."""
     market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
     strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
     risk, observer = RecordingRiskManager(), StubObserver()
@@ -278,62 +235,26 @@ def test_risk_manager_and_observer_run_independently() -> None:
     ).run()
 
     assert risk.market_events == [market]
-    assert risk.observed[0].ticker == "AAPL"
+    assert [o.ticker for o in risk.received_orders[0]] == ["AAPL"]
     assert observer.market_events == [market]
     assert observer.observed[0].ticker == "AAPL"
 
 
-class PositionAwarePortfolio:
-    """Only opens a position for a ticker while flat; tracks position from fills."""
+class DropAllRiskManager:
+    """Replaces the strategy's whole batch with a single fixed exit order."""
 
-    def __init__(self) -> None:
-        self._positions: dict[str, int] = {}
-
-    def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
-        return [
-            OrderEvent(timestamp=event.timestamp, ticker=t, quantity=100, direction="BUY")
-            for t, s in event.scores.items()
-            if s > 0 and self._positions.get(t, 0) == 0
-        ]
-
-    def process_fill(self, event: FillEvent) -> Sequence[OrderEvent]:
-        signed_qty = event.quantity if event.direction == "BUY" else -event.quantity
-        self._positions[event.ticker] = self._positions.get(event.ticker, 0) + signed_qty
-        return []
+    def reconcile(self, event: MarketEvent, orders: Sequence[OrderEvent]) -> Sequence[OrderEvent]:
+        return [OrderEvent(timestamp=event.timestamp, ticker="AAPL", quantity=7, direction="SELL")]
 
 
-class FlatteningOnSecondBarRiskManager:
-    """Emits a flattening SELL the second time on_market is called."""
+def test_risk_manager_beats_strategy() -> None:
+    """Only the risk manager's reconciled orders reach the execution handler; the
+    strategy's own order for the same ticker is overridden."""
+    market = MarketEvent(timestamp=TS, bars={"AAPL": BAR})
+    strategy, portfolio, execution = StubStrategy(), StubPortfolio(), StubExecutionHandler()
 
-    def __init__(self) -> None:
-        self._calls = 0
+    _make_engine([market], strategy, portfolio, execution, risk_manager=DropAllRiskManager()).run()
 
-    def on_market(self, event: MarketEvent) -> Sequence[OrderEvent]:
-        self._calls += 1
-        if self._calls == 2:
-            return [
-                OrderEvent(timestamp=event.timestamp, ticker="AAPL", quantity=100, direction="SELL")
-            ]
-        return []
-
-    def on_fill(self, event: FillEvent) -> None:
-        pass
-
-
-def test_risk_manager_order_settles_before_next_bar_signal() -> None:
-    """A risk-emitted order must be fully settled (fill applied to Portfolio) before
-    the same bar's Strategy signal is processed, or Portfolio sizes off a stale position.
-    """
-    ts2 = datetime(2024, 1, 2)
-    bars = [
-        MarketEvent(timestamp=TS, bars={"AAPL": BAR}),
-        MarketEvent(timestamp=ts2, bars={"AAPL": BAR}),
-    ]
-    strategy = StubStrategy()
-    portfolio = PositionAwarePortfolio()
-    execution = StubExecutionHandler()
-    risk = FlatteningOnSecondBarRiskManager()
-
-    _make_engine(bars, strategy, portfolio, execution, risk_manager=risk).run()
-
-    assert [o.direction for o in execution.orders] == ["BUY", "SELL", "BUY"]
+    assert len(execution.orders) == 1
+    assert execution.orders[0].direction == "SELL"
+    assert execution.orders[0].quantity == 7
