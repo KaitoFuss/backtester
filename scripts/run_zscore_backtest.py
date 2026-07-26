@@ -2,7 +2,7 @@
 alongside a buy-and-hold benchmark, and print first-pass performance metrics.
 
 Usage:
-    uv run scripts/run_zscore_backtest.py configs/zscore_backtest.example.json
+    uv run scripts/run_zscore_backtest.py configs/zscore_backtest.json
 """
 
 from __future__ import annotations

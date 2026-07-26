@@ -1,7 +1,7 @@
 """Fetch daily OHLCV data from yfinance and write one Parquet file per day.
 
 Usage:
-    uv run scripts/fetch_data.py configs/fetch_data.example.json
+    uv run scripts/fetch_data.py configs/fetch_data.json
 """
 
 from __future__ import annotations
