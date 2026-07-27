@@ -53,14 +53,25 @@ All events are frozen dataclasses forming the `Event = MarketEvent | SignalEvent
 
 ### Logging conventions
 
-Every module that makes a trading decision logs it, at a level chosen so `INFO` alone reads as a clean trade blotter and `DEBUG` adds the full numeric trail behind each entry. Each module gets its own `logger = logging.getLogger(__name__)`; never add a function parameter or return value just to thread a logger or a log message through — log with whatever the function already has in scope.
+Every module that makes a trading decision logs it, at a level chosen so `INFO` alone reads as a clean trade blotter and `DEBUG` adds the full numeric trail behind each entry. Each module gets its own `logger = logging.getLogger(__name__)`; never add a function parameter or return value just to thread a logger or a log message through — log with whatever the function already has in scope (the one exception is `VolWeightedPortfolio._record_returns_for_vol`, which takes `timestamp` as a real parameter since it's a private helper with no other access to it).
 
-- **DEBUG** — high-volume, per-bar/per-ticker computation: raw scores, vol estimates, threshold checks, warm-up progress, individual order fills, the MARKET → SIGNAL → ORDER → FILL pipeline in `Engine._dispatch`.
-- **INFO** — state-changing or otherwise notable decisions: a position opened or closed (with the reason — sign flip, threshold, zero score), a risk exit (stop-loss/take-profit/max-holding), a gross-budget scale-down, a new ticker entering a strategy's universe, run start/end summaries, end-of-run liquidation.
+- **DEBUG** — high-volume, per-bar/per-ticker computation: raw scores, vol estimates, threshold checks, warm-up progress, individual fills, the MARKET → SIGNAL → ORDER → FILL pipeline in `Engine._dispatch`.
+- **INFO** — every actual trade (open, close, risk exit, end-of-run liquidation) via `core/trade_log.py`'s `log_trade`, plus gross-budget scale-downs, a new ticker entering a strategy's universe, and run start/end summaries.
 - **WARNING** — data went missing where it was expected (e.g. no price for a held position when marking equity).
 - **ERROR** — an order genuinely can't be filled (e.g. no price available at all).
 
-Message format: a per-ticker/per-decision line leads with the ticker (e.g. `"%s: closing ..."`, matching `portfolio/utils.py`, `risk/exits.py`, `strategy/zscore_ma.py`) — never with `event.timestamp`, since the log record's own `asctime` already carries wall-clock time. Only the genuinely per-bar pipeline logs (`Engine._dispatch`'s MARKET/SIGNAL/ORDER/FILL trace, `tracker/metrics.py`'s equity marks) embed the backtest's simulated bar timestamp, since there it's the one piece of context the record doesn't otherwise carry.
+**Every log line leads with the backtest's simulated timestamp** (the bar/event timestamp, not wall-clock `asctime`) — that's the one piece of context a log record can't otherwise carry, and it's what makes a run's log retraceable against the data. Get it from whatever's already in scope (`event.timestamp`, an `OrderEvent`/`FillEvent`'s `.timestamp`, a `partition_signal`/`size_to_orders` `timestamp` parameter) rather than adding new plumbing.
+
+Every trade — open, close, risk exit, liquidation — goes through `log_trade(logger, timestamp, action, direction, ticker, quantity, price, reason)` in `core/trade_log.py`, one column-aligned INFO line each:
+
+```
+2016-03-10 00:00:00  OPEN      BUY  UUP    qty=  2175  price=     24.9700  score=2.295 weight=0.54301
+2016-03-11 00:00:00  CLOSE     BUY  FXE    qty=   418  price=    109.0100  score sign flipped against held position
+2024-11-02 00:00:00  RISK_EXIT SELL AAPL   qty=   340  price=    172.1100  stop_loss
+2024-12-31 00:00:00  LIQUIDATE SELL SPY    qty=    62  price=    586.0800  end of backtest run
+```
+
+`action` is one of `OPEN`/`CLOSE`/`RISK_EXIT`/`LIQUIDATE`; `reason` is free text (the score/threshold that triggered an open or close, the breach type for a risk exit, `"end of backtest run"` for liquidation). Never invent a second trade-log format — route every new trade-decision site through `log_trade`.
 
 Run at `-v`/`INFO` for a readable trade log; drop to `DEBUG` to retrace *why* a specific bar's decision came out the way it did.
 

@@ -93,7 +93,8 @@ class ScoreProportionalPortfolio:
             return []
         if available < self._max_gross:
             logger.info(
-                "Gross budget reduced to %.4f (max_gross=%.4f) by existing positions",
+                "%s  Gross budget reduced to %.4f (max_gross=%.4f) by existing positions",
+                event.timestamp,
                 available,
                 self._max_gross,
             )

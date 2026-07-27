@@ -1,9 +1,11 @@
 import logging
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+from typing import Literal
 
 from backtester.core.engine import PortfolioView
 from backtester.core.events import MarketEvent, OrderEvent, Position
+from backtester.core.trade_log import log_trade
 
 logger = logging.getLogger(__name__)
 
@@ -46,17 +48,29 @@ class PositionExitRiskManager:
 
             reason = self._breach_reason(position, bar.close, event.timestamp)
             if reason is None:
-                logger.debug("%s: no risk breach (close=%.4f)", ticker, bar.close)
+                logger.debug(
+                    "%s  %s: no risk breach (close=%.4f)", event.timestamp, ticker, bar.close
+                )
                 continue
 
-            logger.info("Risk exit for %s: %s (close=%.4f)", ticker, reason, bar.close)
+            direction: Literal["BUY", "SELL"] = "SELL" if position.quantity > 0 else "BUY"
+            log_trade(
+                logger,
+                event.timestamp,
+                "RISK_EXIT",
+                direction,
+                ticker,
+                abs(position.quantity),
+                bar.close,
+                reason,
+            )
             exit_tickers.add(ticker)
             exits.append(
                 OrderEvent(
                     timestamp=event.timestamp,
                     ticker=ticker,
                     quantity=abs(position.quantity),
-                    direction="SELL" if position.quantity > 0 else "BUY",
+                    direction=direction,
                 )
             )
 

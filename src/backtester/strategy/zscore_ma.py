@@ -34,12 +34,20 @@ class ZScoreMovingAverageStrategy:
             returns.append(math.log(bar.close / prev_close))
 
             if len(returns) < self._window:
-                logger.debug("%s: warming up (%d/%d returns)", ticker, len(returns), self._window)
+                logger.debug(
+                    "%s  %s: warming up (%d/%d returns)",
+                    event.timestamp,
+                    ticker,
+                    len(returns),
+                    self._window,
+                )
                 continue
 
             stdev = statistics.stdev(returns)
             if stdev == 0:
-                logger.debug("%s: zero return stdev over window, skipping", ticker)
+                logger.debug(
+                    "%s  %s: zero return stdev over window, skipping", event.timestamp, ticker
+                )
                 continue
 
             mean = statistics.fmean(returns)
@@ -47,7 +55,8 @@ class ZScoreMovingAverageStrategy:
             z = max(-self._winsor_limit, min(self._winsor_limit, raw_z))
             scores[ticker] = -z
             logger.debug(
-                "%s: return=%.5f mean=%.5f stdev=%.5f raw_z=%.3f score=%.3f",
+                "%s  %s: return=%.5f mean=%.5f stdev=%.5f raw_z=%.3f score=%.3f",
+                event.timestamp,
                 ticker,
                 returns[-1],
                 mean,

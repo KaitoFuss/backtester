@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Literal, Protocol
 
 from backtester.core.events import (
     Event,
@@ -11,6 +11,7 @@ from backtester.core.events import (
     SignalEvent,
 )
 from backtester.core.queue import EventQueue
+from backtester.core.trade_log import log_trade
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ class Engine:
             case SignalEvent():
                 logger.debug("SIGNAL %s: %d scores", event.timestamp, len(event.scores))
                 orders = self._portfolio.process_signal(event)
-                logger.debug("  portfolio proposed %d order(s)", len(orders))
+                logger.debug("%s  portfolio proposed %d order(s)", event.timestamp, len(orders))
                 # The risk manager sees the full order batch for this bar and
                 # returns the final set to trade: it drops strategy orders on
                 # tickers it is exiting and appends its own exits (risk beats
@@ -105,7 +106,8 @@ class Engine:
                     reconciled = self._risk_manager.reconcile(self._current_bar, orders)
                     if reconciled != orders:
                         logger.debug(
-                            "  risk manager changed order batch: %d -> %d order(s)",
+                            "%s  risk manager changed order batch: %d -> %d order(s)",
+                            event.timestamp,
                             len(orders),
                             len(reconciled),
                         )
@@ -158,24 +160,30 @@ class Engine:
         marked-to-market PnL on positions still open when data runs out."""
         if self._current_bar is None:
             return
+        timestamp = self._current_bar.timestamp
         closing: list[OrderEvent] = []
-        for ticker in self._current_bar.bars:
+        for ticker, bar in self._current_bar.bars.items():
             position = self._portfolio.get_position(ticker)
             if position is None or position.quantity == 0:
                 continue
+            direction: Literal["BUY", "SELL"] = "SELL" if position.quantity > 0 else "BUY"
+            log_trade(
+                logger,
+                timestamp,
+                "LIQUIDATE",
+                direction,
+                ticker,
+                abs(position.quantity),
+                bar.close,
+                "end of backtest run",
+            )
             closing.append(
                 OrderEvent(
-                    timestamp=self._current_bar.timestamp,
+                    timestamp=timestamp,
                     ticker=ticker,
                     quantity=abs(position.quantity),
-                    direction="SELL" if position.quantity > 0 else "BUY",
+                    direction=direction,
                 )
-            )
-        if closing:
-            logger.info(
-                "Liquidating %d open position(s) at end of run: %s",
-                len(closing),
-                ", ".join(o.ticker for o in closing),
             )
         self._put_all(closing)
         while not self._queue.empty():

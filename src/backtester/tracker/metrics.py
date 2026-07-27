@@ -120,7 +120,8 @@ class PerformanceTracker:
         )
         self._trades.append(closed_trade)
         logger.debug(
-            "%s: trade closed, entry=%.4f exit=%.4f pnl=%.2f",
+            "%s  %s: trade closed, entry=%.4f exit=%.4f pnl=%.2f",
+            event.timestamp,
             closed_trade.ticker,
             closed_trade.entry_price,
             closed_trade.exit_price,

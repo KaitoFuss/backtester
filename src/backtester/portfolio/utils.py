@@ -2,9 +2,11 @@ import logging
 from collections.abc import Collection, Mapping
 from dataclasses import replace
 from datetime import datetime
+from typing import Literal
 
 from backtester.core.engine import PriceSource
 from backtester.core.events import FillEvent, OrderEvent, Position, Ticker
+from backtester.core.trade_log import log_trade
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +72,14 @@ def partition_signal(
         if current_qty == 0:
             if score == 0 or abs(score) < entry_threshold:
                 logger.debug(
-                    "%s: score=%.3f below entry_threshold=%.3f, no open",
+                    "%s  %s: score=%.3f below entry_threshold=%.3f, no open",
+                    timestamp,
                     ticker,
                     score,
                     entry_threshold,
                 )
                 continue
             open_candidates.append((ticker, score, price))
-            logger.debug("%s: open candidate, score=%.3f price=%.4f", ticker, score, price)
         else:
             held_sign = 1 if current_qty > 0 else -1
             score_sign = (score > 0) - (score < 0)
@@ -90,19 +92,16 @@ def partition_signal(
             else:
                 reason = None
             if reason is not None:
-                logger.info(
-                    "%s: closing %s%d (%s)",
-                    ticker,
-                    "SELL " if current_qty > 0 else "BUY ",
-                    abs(current_qty),
-                    reason,
+                direction: Literal["BUY", "SELL"] = "SELL" if current_qty > 0 else "BUY"
+                log_trade(
+                    logger, timestamp, "CLOSE", direction, ticker, abs(current_qty), price, reason
                 )
                 close_orders.append(
                     OrderEvent(
                         timestamp=timestamp,
                         ticker=ticker,
                         quantity=abs(current_qty),
-                        direction="SELL" if current_qty > 0 else "BUY",
+                        direction=direction,
                     )
                 )
     return close_orders, open_candidates
@@ -118,30 +117,28 @@ def size_to_orders(
     each candidate's price. A ticker missing from ``weights`` (e.g. no vol
     estimate yet) is skipped."""
     orders: list[OrderEvent] = []
-    for ticker, _, price in candidates:
+    for ticker, score, price in candidates:
         if ticker not in weights:
-            logger.debug("%s: no weight assigned, skipping open", ticker)
+            logger.debug("%s  %s: no weight assigned, skipping open", timestamp, ticker)
             continue
         qty = round(weights[ticker] * equity / price)
         if qty == 0:
             logger.debug(
-                "%s: weight=%.5f rounds to 0 shares, skipping open", ticker, weights[ticker]
+                "%s  %s: weight=%.5f rounds to 0 shares, skipping open",
+                timestamp,
+                ticker,
+                weights[ticker],
             )
             continue
-        logger.debug(
-            "%s: opening %s%d @ %.4f (weight=%.5f)",
-            ticker,
-            "BUY " if qty > 0 else "SELL ",
-            abs(qty),
-            price,
-            weights[ticker],
-        )
+        direction: Literal["BUY", "SELL"] = "BUY" if qty > 0 else "SELL"
+        reason = f"score={score:.3f} weight={weights[ticker]:.5f}"
+        log_trade(logger, timestamp, "OPEN", direction, ticker, abs(qty), price, reason)
         orders.append(
             OrderEvent(
                 timestamp=timestamp,
                 ticker=ticker,
                 quantity=abs(qty),
-                direction="BUY" if qty > 0 else "SELL",
+                direction=direction,
             )
         )
     return orders

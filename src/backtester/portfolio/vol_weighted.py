@@ -3,6 +3,7 @@ import math
 import statistics
 from collections import deque
 from collections.abc import Sequence
+from datetime import datetime
 
 from backtester.core.engine import PriceSource
 from backtester.core.events import FillEvent, OrderEvent, Position, SignalEvent, Ticker
@@ -76,7 +77,7 @@ class VolWeightedPortfolio:
     def mark_to_market(self) -> float:
         return compute_equity(self._cash, self._positions, self._price_source)
 
-    def _record_returns_for_vol(self, tickers: set[Ticker]) -> None:
+    def _record_returns_for_vol(self, tickers: set[Ticker], timestamp: datetime) -> None:
         """Append each ticker's latest log return to its trailing window, giving
         ``annualized_vol`` the history it works from. ``Bar`` guarantees prices
         are positive, so the only bar skipped is a ticker's first observation
@@ -91,7 +92,8 @@ class VolWeightedPortfolio:
                 returns = self._returns.setdefault(ticker, deque(maxlen=self._vol_window))
                 returns.append(math.log(price / prev))
                 logger.debug(
-                    "%s: return=%.5f window=%d/%d",
+                    "%s  %s: return=%.5f window=%d/%d",
+                    timestamp,
                     ticker,
                     returns[-1],
                     len(returns),
@@ -103,7 +105,7 @@ class VolWeightedPortfolio:
         # so held names keep a live vol estimate on bars where they're absent
         # from `scores` (the `| set(...)` unions both ticker sets).
         tracked_tickers = set(event.scores) | set(self._positions)
-        self._record_returns_for_vol(tracked_tickers)
+        self._record_returns_for_vol(tracked_tickers, event.timestamp)
         equity = self.mark_to_market()
 
         close_orders, open_candidates = partition_signal(
@@ -134,14 +136,15 @@ class VolWeightedPortfolio:
             vol = annualized_vol(self._returns.get(ticker), self._vol_window)
             if vol is None:
                 logger.debug(
-                    "%s: vol not ready (%d/%d returns), skipping open",
+                    "%s  %s: vol not ready (%d/%d returns), skipping open",
+                    event.timestamp,
                     ticker,
                     len(self._returns.get(ticker, [])),
                     self._vol_window,
                 )
             else:
                 candidate_vols[ticker] = vol
-                logger.debug("%s: annualized_vol=%.4f", ticker, vol)
+                logger.debug("%s  %s: annualized_vol=%.4f", event.timestamp, ticker, vol)
 
         raw = {
             ticker: score * self._target_vol / candidate_vols[ticker]
@@ -168,7 +171,8 @@ class VolWeightedPortfolio:
         scale = min(1.0, available / total_abs_raw)
         if scale < 1.0:
             logger.info(
-                "Gross budget %.4f < requested %.4f, scaling opens by %.3f",
+                "%s  Gross budget %.4f < requested %.4f, scaling opens by %.3f",
+                event.timestamp,
                 available,
                 total_abs_raw,
                 scale,

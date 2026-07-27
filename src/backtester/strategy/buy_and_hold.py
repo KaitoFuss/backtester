@@ -23,7 +23,7 @@ class BuyAndHoldStrategy:
         new_tickers = event.bars.keys() - self._known
         if not new_tickers:
             return SignalEvent(timestamp=event.timestamp, scores={})
-        logger.info("Adding %s to held universe", sorted(new_tickers))
+        logger.info("%s  Adding %s to held universe", event.timestamp, sorted(new_tickers))
         self._known |= new_tickers
         scores = dict.fromkeys(self._known, 1.0)
         return SignalEvent(timestamp=event.timestamp, scores=scores)
