@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from backtester.config import BacktestConfig
-from backtester.core.engine import Engine, Strategy
+from backtester.core.engine import Engine, Portfolio, PriceSource, RiskManager, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
-from backtester.portfolio.weighted import WeightedPortfolio
+from backtester.portfolio.score_proportional import ScoreProportionalPortfolio
+from backtester.portfolio.vol_weighted import VolWeightedPortfolio
 from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
@@ -26,31 +28,21 @@ from backtester.tracker.reporting import monthly_returns_table, strategy_correla
 logger = logging.getLogger(__name__)
 
 
+PortfolioFactory = Callable[[PriceSource], Portfolio]
+RiskManagerFactory = Callable[[Portfolio], RiskManager | None]
+
+
 def _run_backtest(
     data_dir: Path,
     tickers: list[str] | None,
     strategy: Strategy,
-    initial_cash: float,
-    entry_threshold: float,
-    exit_threshold: float,
-    stop_loss_pct: float | None,
-    take_profit_pct: float | None,
-    max_holding_days: int | None,
+    portfolio_factory: PortfolioFactory,
+    risk_manager_factory: RiskManagerFactory,
 ) -> PerformanceTracker:
     market_data = ParquetMarketData(data_dir, tickers=tickers)
-    portfolio = WeightedPortfolio(
-        price_source=market_data,
-        initial_cash=initial_cash,
-        entry_threshold=entry_threshold,
-        exit_threshold=exit_threshold,
-    )
+    portfolio = portfolio_factory(market_data)
     tracker = PerformanceTracker(portfolio=portfolio)
-    risk_manager = PositionExitRiskManager(
-        portfolio=portfolio,
-        stop_loss_pct=stop_loss_pct,
-        take_profit_pct=take_profit_pct,
-        max_holding_days=max_holding_days,
-    )
+    risk_manager = risk_manager_factory(portfolio)
 
     engine = Engine(
         data_handler=market_data,
@@ -78,24 +70,34 @@ def main() -> None:
     strategy_tracker = _run_backtest(
         data_dir,
         config.tickers,
-        ZScoreMovingAverageStrategy(window=config.window),
-        config.initial_cash,
-        config.entry_threshold,
-        config.exit_threshold,
-        config.stop_loss_pct,
-        config.take_profit_pct,
-        config.max_holding_days,
+        ZScoreMovingAverageStrategy(window=config.window, winsor_limit=config.winsor_limit),
+        lambda price_source: VolWeightedPortfolio(
+            price_source=price_source,
+            initial_cash=config.initial_cash,
+            entry_threshold=config.entry_threshold,
+            exit_threshold=config.exit_threshold,
+            vol_window=config.vol_window,
+            max_gross=config.max_gross,
+            target_vol=config.target_vol,
+        ),
+        lambda portfolio: PositionExitRiskManager(
+            portfolio=portfolio,
+            stop_loss_pct=config.stop_loss_pct,
+            take_profit_pct=config.take_profit_pct,
+            max_holding_days=config.max_holding_days,
+        ),
     )
+    # Buy & Hold is a passive reference, not a strategy under test — it never
+    # exits, so none of the strategy's risk-exit config (stop-loss,
+    # take-profit, max-holding-days) applies to it.
     benchmark_tracker = _run_backtest(
         data_dir,
         config.tickers,
         BuyAndHoldStrategy(),
-        config.initial_cash,
-        config.entry_threshold,
-        config.exit_threshold,
-        config.stop_loss_pct,
-        config.take_profit_pct,
-        config.max_holding_days,
+        lambda price_source: ScoreProportionalPortfolio(
+            price_source=price_source, initial_cash=config.initial_cash, max_gross=config.max_gross
+        ),
+        lambda portfolio: None,
     )
 
     trackers = {"Strategy": strategy_tracker, "Buy & Hold": benchmark_tracker}

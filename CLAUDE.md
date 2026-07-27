@@ -44,12 +44,36 @@ All events are frozen dataclasses forming the `Event = MarketEvent | SignalEvent
 ### Implemented components
 
 - `strategy/`: `ZScoreMovingAverageStrategy` (mean-reversion on z-scored log returns) and `BuyAndHoldStrategy` (equal-weight benchmark).
-- `portfolio/`: `WeightedPortfolio` — sizes positions proportional to signal scores normalized by total absolute score; a score of 0 closes the position, a ticker absent from the signal is held unchanged.
+- `portfolio/`: `VolWeightedPortfolio` — opens long/short positions weighted `score * target_vol / trailing σ` (signed conviction scaled to a target risk contribution per unit vol), capped — never scaled up, only down — to fit the gross still available under `max_gross` (the leverage limit: gross exposure as a multiple of equity). A candidate without a full `vol_window` of returns yet is skipped for that bar, no fallback. Cash is tracked as an accounting balance, not a sizing constraint — the leverage cap is. Held positions are never resized (flat→open→flat band trading); a sign flip / sub-`exit_threshold` / zero score closes; an absent ticker is held. `ScoreProportionalPortfolio` is the vol-free default: same open/hold/close semantics, sized `score / total abs score` normalized into the `max_gross` budget — only equal-weighted when every open candidate's score has the same magnitude, otherwise proportional to score — opening on the same bar a score first qualifies (no vol warm-up) — used for `BuyAndHoldStrategy`, which only signals a ticker once and would otherwise never get bought under `VolWeightedPortfolio`'s no-fallback rule.
 - `execution/`: `IdealExecutionHandler` — fills at the current cached price, no slippage or commission.
 - `tracker/`: `PerformanceTracker` (satisfies the `Tracker` protocol; equity curve + metrics) and `plotting.py` (equity/drawdown charts).
-- `risk/`: `PositionExitRiskManager` (satisfies the `RiskManager` protocol) — flattens a position on stop-loss, take-profit, or max-holding-days breach. Stateless: it reads entry price/date/quantity from the `Portfolio` via `PortfolioView` (the `WeightedPortfolio` now records cost basis per position) rather than replaying the fill stream.
+- `risk/`: `PositionExitRiskManager` (satisfies the `RiskManager` protocol) — flattens a position on stop-loss, take-profit, or max-holding-days breach. Stateless: it reads entry price/date/quantity from the `Portfolio` via `PortfolioView` (the `VolWeightedPortfolio` records cost basis per position) rather than replaying the fill stream.
 
 `scripts/run_zscore_backtest.py` shows the full wiring. See `NOTES.md` sections 4–8 for the remaining open design questions (slippage/commission model, risk checks, richer performance metrics).
+
+### Logging conventions
+
+Every module that makes a trading decision logs it, at a level chosen so `INFO` alone reads as a clean trade blotter and `DEBUG` adds the full numeric trail behind each entry. Each module gets its own `logger = logging.getLogger(__name__)`; never add a function parameter or return value just to thread a logger or a log message through — log with whatever the function already has in scope (the one exception is `VolWeightedPortfolio._record_returns_for_vol`, which takes `timestamp` as a real parameter since it's a private helper with no other access to it).
+
+- **DEBUG** — high-volume, per-bar/per-ticker computation: raw scores, vol estimates, threshold checks, warm-up progress, individual fills, the MARKET → SIGNAL → ORDER → FILL pipeline in `Engine._dispatch`.
+- **INFO** — every actual trade (open, close, risk exit, end-of-run liquidation) via `core/trade_log.py`'s `log_trade`, plus gross-budget scale-downs, a new ticker entering a strategy's universe, and run start/end summaries.
+- **WARNING** — data went missing where it was expected (e.g. no price for a held position when marking equity).
+- **ERROR** — an order genuinely can't be filled (e.g. no price available at all).
+
+**Every log line leads with the backtest's simulated timestamp** (the bar/event timestamp, not wall-clock `asctime`) — that's the one piece of context a log record can't otherwise carry, and it's what makes a run's log retraceable against the data. Get it from whatever's already in scope (`event.timestamp`, an `OrderEvent`/`FillEvent`'s `.timestamp`, a `partition_signal`/`size_to_orders` `timestamp` parameter) rather than adding new plumbing.
+
+Every trade — open, close, risk exit, liquidation — goes through `log_trade(logger, timestamp, action, direction, ticker, quantity, price, reason)` in `core/trade_log.py`, one column-aligned INFO line each:
+
+```
+2016-03-10 00:00:00  OPEN      BUY  UUP    qty=  2175  price=     24.9700  score=2.295 weight=0.54301
+2016-03-11 00:00:00  CLOSE     BUY  FXE    qty=   418  price=    109.0100  score sign flipped against held position
+2024-11-02 00:00:00  RISK_EXIT SELL AAPL   qty=   340  price=    172.1100  stop_loss
+2024-12-31 00:00:00  LIQUIDATE SELL SPY    qty=    62  price=    586.0800  end of backtest run
+```
+
+`action` is one of `OPEN`/`CLOSE`/`RISK_EXIT`/`LIQUIDATE`; `reason` is free text (the score/threshold that triggered an open or close, the breach type for a risk exit, `"end of backtest run"` for liquidation). Never invent a second trade-log format — route every new trade-decision site through `log_trade`.
+
+Run at `-v`/`INFO` for a readable trade log; drop to `DEBUG` to retrace *why* a specific bar's decision came out the way it did.
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands

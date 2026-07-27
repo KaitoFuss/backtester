@@ -1,9 +1,12 @@
+import logging
 import statistics
 from dataclasses import dataclass
 from datetime import datetime
 
 from backtester.core.engine import PortfolioView
 from backtester.core.events import FillEvent, MarketEvent, Ticker
+
+logger = logging.getLogger(__name__)
 
 TRADING_DAYS_PER_YEAR = 252
 
@@ -72,7 +75,18 @@ class PerformanceTracker:
         self._traded_notional = 0.0
 
     def track_market(self, event: MarketEvent) -> None:
-        self._mark_to_market_history.append((event.timestamp, self._portfolio.mark_to_market()))
+        # A bar with no prices for any traded ticker is outside the data window
+        # for this universe (e.g. before the first listing, or after a data
+        # feed ends). Recording it would mark held positions at stale prices and
+        # pad the equity series with dead, zero-return points, flattening the
+        # tail of every report and biasing the annualized metrics. Skipping such
+        # bars lets the reported window track the actual data range dynamically.
+        if not event.bars:
+            logger.debug("%s: no prices in bar, skipping equity mark", event.timestamp)
+            return
+        equity = self._portfolio.mark_to_market()
+        self._mark_to_market_history.append((event.timestamp, equity))
+        logger.debug("%s: equity=%.2f", event.timestamp, equity)
         if self._open_tickers:
             self._bars_in_market += 1
 
@@ -96,15 +110,22 @@ class PerformanceTracker:
         self._open_tickers.discard(event.ticker)
         if open_trade is None:
             return
-        self._trades.append(
-            _Trade(
-                ticker=open_trade.ticker,
-                quantity=open_trade.quantity,
-                entry_price=open_trade.entry_price,
-                exit_price=event.fill_price,
-                entry_commission=open_trade.entry_commission,
-                exit_commission=event.commission,
-            )
+        closed_trade = _Trade(
+            ticker=open_trade.ticker,
+            quantity=open_trade.quantity,
+            entry_price=open_trade.entry_price,
+            exit_price=event.fill_price,
+            entry_commission=open_trade.entry_commission,
+            exit_commission=event.commission,
+        )
+        self._trades.append(closed_trade)
+        logger.debug(
+            "%s  %s: trade closed, entry=%.4f exit=%.4f pnl=%.2f",
+            event.timestamp,
+            closed_trade.ticker,
+            closed_trade.entry_price,
+            closed_trade.exit_price,
+            closed_trade.pnl,
         )
 
     @property

@@ -1,8 +1,11 @@
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
+
+logger = logging.getLogger(__name__)
 
 _FIELDS = (
     ("close", "Close"),
@@ -26,10 +29,21 @@ def fetch_to_parquet(
     `close` required, `open`/`high`/`low`/`volume` present only when the
     downloader returned a non-NaN value for that ticker/day (e.g. a ticker
     not yet listed, or delisted, on a given day).
+
+    Existing .parquet files in ``out_dir`` are deleted first: ``ParquetMarketData``
+    reads every file in the directory regardless of which fetch wrote it, so a
+    stale file from a previous fetch with a different ticker universe or date
+    range would silently mix into the new one.
     """
     data = downloader(tickers, start=start, end=end, group_by="ticker", auto_adjust=False)
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    stale_files = list(out_dir.glob("*.parquet"))
+    if stale_files:
+        logger.info("Deleting %d existing .parquet file(s) in %s", len(stale_files), out_dir)
+        for path in stale_files:
+            path.unlink()
+
     for timestamp, row in data.iterrows():
         frame = _row_to_frame(row, tickers)
         if frame.empty:

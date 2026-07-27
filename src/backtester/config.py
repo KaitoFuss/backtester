@@ -26,6 +26,10 @@ class BacktestConfig:
     initial_cash: float = 100_000.0
     entry_threshold: float = 0.0
     exit_threshold: float = 0.0
+    vol_window: int = 20
+    max_gross: float = 1.0
+    target_vol: float = 0.2
+    winsor_limit: float = 3.0
     stop_loss_pct: float | None = None
     take_profit_pct: float | None = None
     max_holding_days: int | None = None

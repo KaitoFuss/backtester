@@ -65,6 +65,20 @@ def test_round_trip_through_parquet_handler(tmp_path: Path) -> None:
     assert handler.get_next_bar() is None
 
 
+def test_stale_parquet_files_are_deleted_before_writing(tmp_path: Path) -> None:
+    stale = tmp_path / "2019-06-01.parquet"
+    stale.write_bytes(b"stale")
+    other = tmp_path / "notes.txt"
+    other.write_text("keep me")
+
+    fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-05", tmp_path, downloader=_fake_downloader)
+
+    assert not stale.exists()
+    assert other.exists()
+    written = sorted(p.name for p in tmp_path.glob("*.parquet"))
+    assert written == ["2024-01-02.parquet", "2024-01-03.parquet", "2024-01-04.parquet"]
+
+
 def test_downloader_receives_requested_range(tmp_path: Path) -> None:
     seen: dict[str, object] = {}
 

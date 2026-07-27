@@ -15,6 +15,21 @@ class Bar:
     low: float | None = None
     volume: float | None = None
 
+    def __post_init__(self) -> None:
+        # Positive-price invariant enforced once here, at the single point every
+        # data source constructs a Bar, so downstream code (vol estimation,
+        # sizing) can trust prices are positive without re-guarding.
+        for name, value in (
+            ("close", self.close),
+            ("open", self.open),
+            ("high", self.high),
+            ("low", self.low),
+        ):
+            if value is not None and value <= 0:
+                raise ValueError(f"Bar.{name} must be positive, got {value}")
+        if self.volume is not None and self.volume < 0:
+            raise ValueError(f"Bar.volume must be non-negative, got {self.volume}")
+
 
 @dataclass(frozen=True)
 class Position:

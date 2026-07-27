@@ -1,5 +1,6 @@
+import logging
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Literal, Protocol
 
 from backtester.core.events import (
     Event,
@@ -10,6 +11,9 @@ from backtester.core.events import (
     SignalEvent,
 )
 from backtester.core.queue import EventQueue
+from backtester.core.trade_log import log_trade
+
+logger = logging.getLogger(__name__)
 
 
 class DataHandler(Protocol):
@@ -32,7 +36,7 @@ class Strategy(Protocol):
     def process_market(self, event: MarketEvent) -> SignalEvent: ...
 
 
-class Portfolio(Protocol):
+class Portfolio(PortfolioView, Protocol):
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]: ...
     def process_fill(self, event: FillEvent) -> None: ...
 
@@ -70,6 +74,8 @@ class Engine:
         self._tracker = tracker
         self._queue = EventQueue()
         self._current_bar: MarketEvent | None = None
+        self._bars_processed = 0
+        self._fills_processed = 0
 
     def _put_all(self, events: Sequence[Event]) -> None:
         for e in events:
@@ -78,26 +84,54 @@ class Engine:
     def _dispatch(self, event: Event) -> None:
         match event:
             case MarketEvent():
+                logger.debug("MARKET %s: %d tickers", event.timestamp, len(event.bars))
                 if self._tracker is not None:
                     self._tracker.track_market(event)
                 # The strategy emits exactly one SignalEvent per bar (possibly
                 # empty), kept here so the SignalEvent stage can hand it to the
                 # risk manager — which therefore reconciles once every bar.
                 self._current_bar = event
+                self._bars_processed += 1
                 self._queue.put(self._strategy.process_market(event))
             case SignalEvent():
+                logger.debug("SIGNAL %s: %d scores", event.timestamp, len(event.scores))
                 orders = self._portfolio.process_signal(event)
+                logger.debug("%s  portfolio proposed %d order(s)", event.timestamp, len(orders))
                 # The risk manager sees the full order batch for this bar and
                 # returns the final set to trade: it drops strategy orders on
                 # tickers it is exiting and appends its own exits (risk beats
                 # strategy). `_current_bar` is the MarketEvent behind this signal.
                 if self._risk_manager is not None:
                     assert self._current_bar is not None
-                    orders = self._risk_manager.reconcile(self._current_bar, orders)
+                    reconciled = self._risk_manager.reconcile(self._current_bar, orders)
+                    if reconciled != orders:
+                        logger.debug(
+                            "%s  risk manager changed order batch: %d -> %d order(s)",
+                            event.timestamp,
+                            len(orders),
+                            len(reconciled),
+                        )
+                    orders = reconciled
                 self._put_all(orders)
             case OrderEvent():
+                logger.debug(
+                    "ORDER %s %s %d %s",
+                    event.timestamp,
+                    event.direction,
+                    event.quantity,
+                    event.ticker,
+                )
                 self._put_all(self._execution_handler.process_order(event))
             case FillEvent():
+                logger.debug(
+                    "FILL %s %s %d %s @ %.4f",
+                    event.timestamp,
+                    event.direction,
+                    event.quantity,
+                    event.ticker,
+                    event.fill_price,
+                )
+                self._fills_processed += 1
                 if self._tracker is not None:
                     self._tracker.track_fill(event)
                 self._portfolio.process_fill(event)
@@ -105,6 +139,7 @@ class Engine:
                 raise NotImplementedError(f"unhandled event type: {event!r}")
 
     def run(self) -> None:
+        logger.info("Backtest run starting")
         while True:
             bar = self._data_handler.get_next_bar()
             if bar is None:
@@ -112,3 +147,44 @@ class Engine:
             self._queue.put(bar)
             while not self._queue.empty():
                 self._dispatch(self._queue.get())
+        self._liquidate_open_positions()
+        logger.info(
+            "Backtest run complete: %d bar(s) processed, %d fill(s)",
+            self._bars_processed,
+            self._fills_processed,
+        )
+
+    def _liquidate_open_positions(self) -> None:
+        """Force-close open positions on the last bar's tickers at the end of
+        the run, so performance metrics reflect realized rather than
+        marked-to-market PnL on positions still open when data runs out."""
+        if self._current_bar is None:
+            return
+        timestamp = self._current_bar.timestamp
+        closing: list[OrderEvent] = []
+        for ticker, bar in self._current_bar.bars.items():
+            position = self._portfolio.get_position(ticker)
+            if position is None or position.quantity == 0:
+                continue
+            direction: Literal["BUY", "SELL"] = "SELL" if position.quantity > 0 else "BUY"
+            log_trade(
+                logger,
+                timestamp,
+                "LIQUIDATE",
+                direction,
+                ticker,
+                abs(position.quantity),
+                bar.close,
+                "end of backtest run",
+            )
+            closing.append(
+                OrderEvent(
+                    timestamp=timestamp,
+                    ticker=ticker,
+                    quantity=abs(position.quantity),
+                    direction=direction,
+                )
+            )
+        self._put_all(closing)
+        while not self._queue.empty():
+            self._dispatch(self._queue.get())

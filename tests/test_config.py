@@ -70,3 +70,23 @@ def test_backtest_config_overrides_defaults(tmp_path: Path) -> None:
     assert config.window == 10
     assert config.tickers == ["AAPL"]
     assert config.stop_loss_pct == 0.05
+
+
+def test_backtest_config_overrides_vol_sizing_defaults(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        {
+            "data": "data/raw",
+            "vol_window": 10,
+            "max_gross": 2.0,
+            "target_vol": 0.15,
+            "winsor_limit": 2.5,
+        },
+    )
+
+    config = BacktestConfig.from_json(path)
+
+    assert config.vol_window == 10
+    assert config.max_gross == 2.0
+    assert config.target_vol == 0.15
+    assert config.winsor_limit == 2.5

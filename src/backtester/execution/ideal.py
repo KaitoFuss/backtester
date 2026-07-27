@@ -22,6 +22,14 @@ class IdealExecutionHandler:
                 "the price source must have consumed a bar for this ticker before "
                 "an order can reach execution"
             )
+        logger.debug(
+            "%s  Filled %s %d %s @ %.4f",
+            event.timestamp,
+            event.direction,
+            event.quantity,
+            event.ticker,
+            price,
+        )
         return [
             FillEvent(
                 timestamp=event.timestamp,
