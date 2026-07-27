@@ -2,9 +2,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from backtester.config import BacktestConfig
-from backtester.tracker.metrics import PerformanceMetrics, TradeMetrics
+from backtester.tracker.metrics import (
+    PerformanceMetrics,
+    TradeMetrics,
+    monthly_returns_table,
+    strategy_correlation_matrix,
+)
 from backtester.tracker.report import save_report
-from backtester.tracker.reporting import monthly_returns_table, strategy_correlation_matrix
 
 TS = datetime(2024, 1, 1)
 

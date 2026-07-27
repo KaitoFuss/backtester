@@ -7,7 +7,8 @@ from itertools import pairwise
 import pytest
 
 from backtester.core.events import FillEvent, SignalEvent
-from backtester.portfolio.vol_weighted import VolWeightedPortfolio, annualized_vol
+from backtester.portfolio.utils import annualized_vol
+from backtester.portfolio.vol_weighted import VolWeightedPortfolio
 
 TS = datetime(2024, 1, 1)
 

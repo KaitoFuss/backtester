@@ -1,7 +1,14 @@
 from datetime import datetime, timedelta
+from typing import Literal, cast
+
+import pytest
 
 from backtester.core.events import Bar, FillEvent, MarketEvent, Position
-from backtester.tracker.metrics import PerformanceTracker
+from backtester.tracker.metrics import (
+    PerformanceTracker,
+    monthly_returns_table,
+    strategy_correlation_matrix,
+)
 
 TS = datetime(2024, 1, 1)
 
@@ -159,3 +166,124 @@ def test_track_market_skips_bars_with_no_prices() -> None:
     tracker.track_market(MarketEvent(timestamp=_ts(2), bars=LIVE_BARS))
 
     assert tracker.mark_to_market_history == [(_ts(0), 1_000.0), (_ts(2), 1_050.0)]
+
+
+def _fill(
+    day: int, ticker: str, quantity: int, direction: Literal["BUY", "SELL"], price: float
+) -> FillEvent:
+    return FillEvent(
+        timestamp=_ts(day),
+        ticker=ticker,
+        quantity=quantity,
+        direction=direction,
+        fill_price=price,
+    )
+
+
+def test_scale_in_averages_the_entry_price() -> None:
+    # Two adds then a full close: PnL must use the quantity-weighted entry
+    # (110), not the first or last fill price.
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([]))
+    tracker.track_fill(_fill(0, "AAPL", 10, "BUY", 100.0))
+    tracker.track_fill(_fill(1, "AAPL", 10, "BUY", 120.0))
+    tracker.track_fill(_fill(2, "AAPL", 20, "SELL", 130.0))
+
+    metrics = tracker.trade_metrics()
+
+    assert metrics.num_trades == 1
+    assert metrics.avg_win == pytest.approx(20 * (130.0 - 110.0))
+
+
+def test_partial_close_realizes_each_leg_against_the_same_basis() -> None:
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([]))
+    tracker.track_fill(_fill(0, "AAPL", 10, "BUY", 100.0))
+    tracker.track_fill(_fill(1, "AAPL", 4, "SELL", 110.0))  # +40
+    tracker.track_fill(_fill(2, "AAPL", 6, "SELL", 90.0))  # -60
+
+    metrics = tracker.trade_metrics()
+
+    assert metrics.num_trades == 2
+    assert metrics.win_rate == 0.5
+    assert metrics.avg_win == pytest.approx(4 * (110.0 - 100.0))
+    assert metrics.avg_loss == pytest.approx(6 * (90.0 - 100.0))
+
+
+def test_flip_closes_the_old_position_and_opens_the_remainder() -> None:
+    # BUY 10, then SELL 15 flips to short 5, then BUY 5 flattens: two closed
+    # trades (a long and a short), the second built from the flipped remainder.
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([]))
+    tracker.track_fill(_fill(0, "AAPL", 10, "BUY", 100.0))
+    tracker.track_fill(_fill(1, "AAPL", 15, "SELL", 120.0))  # long +200, opens short 5
+    tracker.track_fill(_fill(2, "AAPL", 5, "BUY", 110.0))  # short closed for +50
+
+    metrics = tracker.trade_metrics()
+
+    assert metrics.num_trades == 2
+    assert metrics.win_rate == 1.0
+    assert metrics.avg_win == pytest.approx((10 * 20.0 + 5 * 10.0) / 2)
+
+
+def test_annualized_return_scales_with_elapsed_calendar_time() -> None:
+    # Same total return and same sample count, but a 10-day span annualizes far
+    # more aggressively than a 100-day span — the metric reads elapsed calendar
+    # time, not the raw number of observations.
+    def annualized(days: list[int]) -> float:
+        tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0, 1_000.0, 1_200.0]))
+        for day in days:
+            tracker.track_market(MarketEvent(timestamp=_ts(day), bars=LIVE_BARS))
+        return tracker.metrics().annualized_return
+
+    short_span = annualized([0, 5, 10])
+    long_span = annualized([0, 50, 100])
+
+    assert short_span > long_span > 0.2  # 0.2 == the raw total return
+
+
+def test_monthly_returns_table_buckets_by_year_and_month() -> None:
+    history = [
+        (datetime(2024, 1, 1), 1_000.0),
+        (datetime(2024, 1, 31), 1_100.0),
+        (datetime(2024, 2, 1), 1_100.0),
+        (datetime(2024, 2, 28), 1_210.0),
+    ]
+
+    table = monthly_returns_table(history)
+
+    assert table.loc[2024, "Jan"] == pytest.approx(0.10)
+    assert table.loc[2024, "Feb"] == pytest.approx(0.10)
+    assert table.loc[2024, "Annual Return"] == pytest.approx(1.21 - 1)
+    assert table.loc[2024, "Max DD"] == pytest.approx(0.0)
+
+
+def test_monthly_returns_table_with_insufficient_history_is_empty() -> None:
+    table = monthly_returns_table([(datetime(2024, 1, 1), 1_000.0)])
+
+    assert table.empty
+
+
+def test_strategy_correlation_matrix_is_one_for_identical_series() -> None:
+    history = [
+        (datetime(2024, 1, 1), 1_000.0),
+        (datetime(2024, 1, 2), 1_010.0),
+        (datetime(2024, 1, 3), 990.0),
+        (datetime(2024, 1, 4), 1_020.0),
+    ]
+
+    correlation = strategy_correlation_matrix({"A": history, "B": history})
+
+    assert correlation.loc["A", "B"] == pytest.approx(1.0)
+
+
+def test_strategy_correlation_matrix_is_negative_for_inverse_series() -> None:
+    base = [1_000.0, 1_010.0, 990.0, 1_020.0]
+    inverse = [1_000.0, 990.0, 1_010.0, 980.0]
+    timestamps = [datetime(2024, 1, i + 1) for i in range(len(base))]
+
+    correlation = strategy_correlation_matrix(
+        {
+            "A": list(zip(timestamps, base, strict=True)),
+            "B": list(zip(timestamps, inverse, strict=True)),
+        }
+    )
+
+    assert cast(float, correlation.loc["A", "B"]) < 0
