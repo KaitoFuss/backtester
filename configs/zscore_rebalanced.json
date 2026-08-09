@@ -9,8 +9,5 @@
   "max_gross": 1.0,
   "dollar_neutral": false,
   "winsor_limit": 3.0,
-  "stop_loss_pct": null,
-  "take_profit_pct": null,
-  "max_holding_days": null,
   "output_dir": "output"
 }
