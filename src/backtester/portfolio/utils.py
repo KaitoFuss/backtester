@@ -74,7 +74,13 @@ def partition_signal(
 ) -> tuple[list[OrderEvent], list[tuple[Ticker, float, float]]]:
     """Split a signal's scores into close orders for positions that no longer
     qualify, and open candidates (ticker, score, price) for flat tickers whose
-    score just crossed ``entry_threshold``."""
+    score just crossed ``entry_threshold``.
+
+    A held position closes when its score, signed into the held direction
+    (``score * held_sign``), falls below ``exit_threshold``. This single test
+    covers both an opposite-signed score (signed score goes negative, below any
+    ``exit_threshold >= 0``, so a reversal always closes) and conviction that
+    has merely decayed in the held direction."""
     close_orders: list[OrderEvent] = []
     open_candidates: list[tuple[Ticker, float, float]] = []
     for ticker, score in scores.items():
@@ -97,13 +103,11 @@ def partition_signal(
             open_candidates.append((ticker, score, price))
         else:
             held_sign = 1 if current_qty > 0 else -1
-            score_sign = (score > 0) - (score < 0)
-            if score == 0:
-                reason = "score is zero"
-            elif score_sign != held_sign:
-                reason = "score sign flipped against held position"
-            elif abs(score) < exit_threshold:
-                reason = f"score={score:.3f} below exit_threshold={exit_threshold:.3f}"
+            signed_score = score * held_sign
+            if signed_score < exit_threshold:
+                reason = (
+                    f"signed score={signed_score:.3f} below exit_threshold={exit_threshold:.3f}"
+                )
             else:
                 reason = None
             if reason is not None:

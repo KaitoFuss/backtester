@@ -24,8 +24,8 @@ def _sample_inputs() -> tuple[
     BacktestConfig,
 ]:
     metrics = {
-        "Strategy": PerformanceMetrics(0.1, 0.1, 0.1, 1.0, -0.05),
-        "Buy & Hold": PerformanceMetrics(0.05, 0.05, 0.15, 0.5, -0.1),
+        "Strategy": PerformanceMetrics(0.1, 0.1, 0.1, 1.0, -0.05, 0.5),
+        "Buy & Hold": PerformanceMetrics(0.05, 0.05, 0.15, 0.5, -0.1, 0.67),
     }
     trade_metrics = {
         "Strategy": TradeMetrics(10, 0.6, 100.0, -50.0, 2.0, 2.0, 1.2, 0.5, 1.5),

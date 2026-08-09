@@ -6,6 +6,7 @@ import pytest
 from backtester.core.events import Bar, FillEvent, MarketEvent, Position
 from backtester.tracker.metrics import (
     PerformanceTracker,
+    drawdown_to_vol_ratio,
     monthly_returns_table,
     strategy_correlation_matrix,
 )
@@ -83,6 +84,27 @@ def test_max_drawdown_reflects_peak_to_trough_decline() -> None:
     peak = 1200.0
     trough = 800.0
     assert metrics.max_drawdown == trough / peak - 1
+
+
+def test_drawdown_to_vol_ratio_normalizes_drawdown_by_vol() -> None:
+    assert drawdown_to_vol_ratio(-0.2, 0.4) == pytest.approx(0.5)
+
+
+def test_drawdown_to_vol_ratio_is_zero_without_vol() -> None:
+    assert drawdown_to_vol_ratio(-0.2, 0.0) == 0.0
+
+
+def test_metrics_expose_drawdown_to_vol_ratio() -> None:
+    values = [1_000.0, 1_200.0, 800.0, 900.0]
+    tracker = PerformanceTracker(portfolio=FakePortfolioView(values))
+    for i in range(len(values)):
+        tracker.track_market(MarketEvent(timestamp=_ts(i), bars=LIVE_BARS))
+
+    metrics = tracker.metrics()
+
+    assert metrics.drawdown_to_vol == pytest.approx(
+        abs(metrics.max_drawdown) / metrics.annualized_vol
+    )
 
 
 def test_trade_metrics_with_no_trades_are_zero() -> None:

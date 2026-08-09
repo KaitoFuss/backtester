@@ -41,7 +41,7 @@ def test_zero_score_without_position_yields_no_orders() -> None:
 
 def test_zero_score_closes_existing_position() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0, exit_threshold=0.1)
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
     )
@@ -56,7 +56,7 @@ def test_zero_score_closes_existing_position() -> None:
 
 def test_short_position_closes_with_a_buy() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio = VolWeightedPortfolio(price_source=prices, initial_cash=10_000.0, exit_threshold=0.1)
     portfolio.process_fill(
         FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="SELL", fill_price=100.0)
     )
