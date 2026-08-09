@@ -112,14 +112,15 @@ def main() -> None:
         ),
     )
     # Buy & Hold is a fixed passive reference, not a thing under test, so it
-    # keeps its own portfolio regardless of config.portfolio. It never exits,
-    # so none of the strategy's risk-exit config applies to it either.
+    # keeps its own portfolio regardless of config.portfolio, at the default
+    # max_gross=1.0 rather than the strategy's configured leverage. It never
+    # exits, so none of the strategy's risk-exit config applies to it either.
     benchmark_tracker = _run_backtest(
         data_dir,
         config.tickers,
         BuyAndHoldStrategy(),
         lambda price_source: EqualWeightPortfolio(
-            price_source=price_source, initial_cash=config.initial_cash, max_gross=config.max_gross
+            price_source=price_source, initial_cash=config.initial_cash
         ),
         lambda portfolio: None,
     )
