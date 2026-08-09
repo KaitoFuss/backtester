@@ -97,8 +97,9 @@ into that layout.
     what is held, so a weight always reflects today's score rather than the
     score on the bar the position opened. A reversal is conviction the other
     way, so the position crosses zero in a single order instead of closing.
-    `dollar_neutral=True` demeans the surviving scores so signed weights sum
-    to zero.
+    `dollar_neutral=True` demeans every scored ticker (an exact `0.0` is a
+    real reading, not a placeholder, so it takes part too) so signed weights
+    sum to zero.
   - `EqualWeightPortfolio` — deliberately the dumbest: a non-zero-scored
     ticker while flat takes an equal share of the remaining gross, then is
     never resized or closed. Exists so `BuyAndHoldStrategy` stays a genuine
