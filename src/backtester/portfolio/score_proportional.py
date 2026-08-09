@@ -80,20 +80,22 @@ class ScoreProportionalPortfolio(BasePortfolio):
             for ticker, score in event.scores.items()
             if self._price_source.get_price(ticker) is not None
         }
-        # Demean only the names carrying a nonzero score — folding an exact
-        # zero into the mean would hand it a weight it never asked for.
-        survivors = {ticker: score for ticker, score in scored.items() if score != 0.0}
-        if self._dollar_neutral and survivors:
-            mean = sum(survivors.values()) / len(survivors)
-            survivors = {ticker: score - mean for ticker, score in survivors.items()}
-            logger.debug("%s  demeaned scores by %.5f for neutrality", event.timestamp, mean)
+        if self._dollar_neutral:
+            # Demean only the names carrying a nonzero score — folding an exact
+            # zero into the mean would hand it a weight it never asked for.
+            nonzero = {ticker: score for ticker, score in scored.items() if score != 0.0}
+            if nonzero:
+                mean = sum(nonzero.values()) / len(nonzero)
+                scored = {
+                    ticker: score - mean if score != 0.0 else 0.0
+                    for ticker, score in scored.items()
+                }
+                logger.debug("%s  demeaned scores by %.5f for neutrality", event.timestamp, mean)
 
-        total_abs = sum(abs(score) for score in survivors.values())
+        total_abs = sum(abs(score) for score in scored.values())
         weights = dict.fromkeys(scored, 0.0)
         if total_abs > 0.0:
-            weights.update(
-                {ticker: score / total_abs * budget for ticker, score in survivors.items()}
-            )
+            weights.update({ticker: score / total_abs * budget for ticker, score in scored.items()})
         return weights
 
     def _orders_from_targets(
