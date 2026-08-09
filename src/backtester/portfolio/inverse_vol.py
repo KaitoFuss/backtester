@@ -88,43 +88,6 @@ def _partition_signal(
     return close_orders, open_candidates
 
 
-def _size_to_orders(
-    weights: Mapping[Ticker, float],
-    candidates: list[tuple[Ticker, float, float]],
-    equity: float,
-    timestamp: datetime,
-) -> list[OrderEvent]:
-    """Turn per-ticker weight-of-equity fractions into BUY/SELL orders, given
-    each candidate's price. A ticker missing from ``weights`` (e.g. no vol
-    estimate yet) is skipped."""
-    orders: list[OrderEvent] = []
-    for ticker, score, price in candidates:
-        if ticker not in weights:
-            logger.debug("%s  %s: no weight assigned, skipping open", timestamp, ticker)
-            continue
-        qty = round(weights[ticker] * equity / price)
-        if qty == 0:
-            logger.debug(
-                "%s  %s: weight=%.5f rounds to 0 shares, skipping open",
-                timestamp,
-                ticker,
-                weights[ticker],
-            )
-            continue
-        direction: Literal["BUY", "SELL"] = "BUY" if qty > 0 else "SELL"
-        reason = f"score={score:.3f} weight={weights[ticker]:.5f}"
-        log_trade(logger, timestamp, "OPEN", direction, ticker, abs(qty), price, reason)
-        orders.append(
-            OrderEvent(
-                timestamp=timestamp,
-                ticker=ticker,
-                quantity=abs(qty),
-                direction=direction,
-            )
-        )
-    return orders
-
-
 class InverseVolPortfolio(BasePortfolio):
     """Band-trading portfolio that sizes purely by risk: a name's weight is
     ``sign(score) / sigma`` (its trailing annualized return vol), normalized so
@@ -209,7 +172,33 @@ class InverseVolPortfolio(BasePortfolio):
         weights = self._target_weights(event, candidates, available)
         if not weights:
             return []
-        return _size_to_orders(weights, candidates, equity, event.timestamp)
+
+        orders: list[OrderEvent] = []
+        for ticker, score, price in candidates:
+            if ticker not in weights:
+                logger.debug("%s  %s: no weight assigned, skipping open", event.timestamp, ticker)
+                continue
+            qty = round(weights[ticker] * equity / price)
+            if qty == 0:
+                logger.debug(
+                    "%s  %s: weight=%.5f rounds to 0 shares, skipping open",
+                    event.timestamp,
+                    ticker,
+                    weights[ticker],
+                )
+                continue
+            direction: Literal["BUY", "SELL"] = "BUY" if qty > 0 else "SELL"
+            reason = f"score={score:.3f} weight={weights[ticker]:.5f}"
+            log_trade(logger, event.timestamp, "OPEN", direction, ticker, abs(qty), price, reason)
+            orders.append(
+                OrderEvent(
+                    timestamp=event.timestamp,
+                    ticker=ticker,
+                    quantity=abs(qty),
+                    direction=direction,
+                )
+            )
+        return orders
 
     def _record_returns_for_vol(self, tickers: set[Ticker], timestamp: datetime) -> None:
         """Append each ticker's latest log return to its trailing window, giving
