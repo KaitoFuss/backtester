@@ -9,14 +9,6 @@ authors = [
     { name = "Kaito", email = "kaito.fuss@gmail.com" }
 ]
 requires-python = ">=3.12"
-keywords = ["backtesting", "quantitative-finance", "event-driven", "trading", "factor-models", "portfolio-construction"]
-classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Financial and Insurance Industry",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Office/Business :: Financial :: Investment",
-    "Typing :: Typed",
-]
 dependencies = [
     "matplotlib>=3.11.0",
     "pandas>=3.0.3",
