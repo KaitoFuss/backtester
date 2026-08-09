@@ -1,5 +1,5 @@
 {
-  "name": "vol_sized",
+  "name": "Vol Sized",
   "data": "data/raw",
   "tickers": ["SPY", "QQQ", "TLT", "IEF", "GLD", "DBC", "UUP", "FXE"],
   "portfolio": "inverse_vol",
