@@ -27,6 +27,21 @@ to force-remove (`--force`) or leave it.
 git worktree list
 ```
 
+5. Delete the worktree's branch on the remote if it's still there. A worktree
+   is created on its own branch, which is usually pushed to open a PR; once that
+   PR is merged (squash-merges leave the branch tip off `main`'s history, so
+   check the PR state rather than `git branch --merged`), the remote branch is
+   stale and should go too:
+
+```bash
+git fetch --prune origin                 # drop remote-tracking refs already deleted upstream
+git branch -r | grep <branch>            # is the branch still on the remote?
+git push origin --delete <branch>        # delete it if so (skip if PR is unmerged/open)
+```
+
+   Do not delete a remote branch whose PR is still open or unmerged — only ones
+   whose work has already landed. If unsure, confirm with the user.
+
 ## Force removal
 
 Only use `--force` if the user explicitly confirms they want to discard
