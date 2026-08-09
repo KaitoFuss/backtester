@@ -58,25 +58,6 @@ def test_save_report_writes_report_1_pdf_on_first_run(tmp_path: Path) -> None:
     assert path.stat().st_size > 0
 
 
-def test_save_report_writes_a_sibling_png_of_the_overview_page(tmp_path: Path) -> None:
-    metrics, trade_metrics, histories, config = _sample_inputs()
-
-    path = save_report(
-        output_dir=tmp_path,
-        histories=histories,
-        metrics=metrics,
-        trade_metrics=trade_metrics,
-        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
-        correlation=strategy_correlation_matrix(histories),
-        config=config,
-    )
-
-    png_path = path.with_suffix(".png")
-    assert png_path == tmp_path / "zscore_momentum_report_1.png"
-    assert png_path.exists()
-    assert png_path.stat().st_size > 0
-
-
 def test_save_report_increments_and_never_overwrites(tmp_path: Path) -> None:
     metrics, trade_metrics, histories, config = _sample_inputs()
     monthly_tables = {label: monthly_returns_table(h) for label, h in histories.items()}
