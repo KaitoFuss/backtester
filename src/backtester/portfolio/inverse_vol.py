@@ -1,20 +1,128 @@
 import logging
 import math
+import statistics
 from collections import deque
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from typing import Literal
 
 from backtester.core.engine import PriceSource
-from backtester.core.events import OrderEvent, SignalEvent, Ticker
-from backtester.portfolio.base import BasePortfolio
-from backtester.portfolio.utils import (
-    annualized_vol,
-    existing_gross,
-    partition_signal,
-    size_to_orders,
-)
+from backtester.core.events import OrderEvent, Position, SignalEvent, Ticker
+from backtester.core.trade_log import log_trade
+from backtester.portfolio.base import BasePortfolio, existing_gross
+from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
 
 logger = logging.getLogger(__name__)
+
+
+def _annualized_vol(returns: deque[float] | None, window: int) -> float | None:
+    """Annualized stdev of a trailing return window, or ``None`` until the
+    window is full or when the sample has no dispersion."""
+    if returns is None or len(returns) < window:
+        return None
+    stdev = statistics.stdev(returns)
+    if stdev == 0:
+        return None
+    return stdev * math.sqrt(TRADING_DAYS_PER_YEAR)
+
+
+def _partition_signal(
+    scores: Mapping[Ticker, float],
+    positions: Mapping[Ticker, Position],
+    price_source: PriceSource,
+    entry_threshold: float,
+    exit_threshold: float,
+    timestamp: datetime,
+) -> tuple[list[OrderEvent], list[tuple[Ticker, float, float]]]:
+    """Split a signal's scores into close orders for positions that no longer
+    qualify, and open candidates (ticker, score, price) for flat tickers whose
+    score just crossed ``entry_threshold``.
+
+    A held position closes when its score, signed into the held direction
+    (``score * held_sign``), falls below ``exit_threshold``. This single test
+    covers both an opposite-signed score (signed score goes negative, below any
+    ``exit_threshold >= 0``, so a reversal always closes) and conviction that
+    has merely decayed in the held direction."""
+    close_orders: list[OrderEvent] = []
+    open_candidates: list[tuple[Ticker, float, float]] = []
+    for ticker, score in scores.items():
+        price = price_source.get_price(ticker)
+        if price is None:
+            continue
+
+        position = positions.get(ticker)
+        current_qty = position.quantity if position else 0
+        if current_qty == 0:
+            if score == 0 or abs(score) < entry_threshold:
+                logger.debug(
+                    "%s  %s: score=%.3f below entry_threshold=%.3f, no open",
+                    timestamp,
+                    ticker,
+                    score,
+                    entry_threshold,
+                )
+                continue
+            open_candidates.append((ticker, score, price))
+        else:
+            held_sign = 1 if current_qty > 0 else -1
+            signed_score = score * held_sign
+            if signed_score < exit_threshold:
+                reason = (
+                    f"signed score={signed_score:.3f} below exit_threshold={exit_threshold:.3f}"
+                )
+            else:
+                reason = None
+            if reason is not None:
+                direction: Literal["BUY", "SELL"] = "SELL" if current_qty > 0 else "BUY"
+                log_trade(
+                    logger, timestamp, "CLOSE", direction, ticker, abs(current_qty), price, reason
+                )
+                close_orders.append(
+                    OrderEvent(
+                        timestamp=timestamp,
+                        ticker=ticker,
+                        quantity=abs(current_qty),
+                        direction=direction,
+                    )
+                )
+    return close_orders, open_candidates
+
+
+def _size_to_orders(
+    weights: Mapping[Ticker, float],
+    candidates: list[tuple[Ticker, float, float]],
+    equity: float,
+    timestamp: datetime,
+) -> list[OrderEvent]:
+    """Turn per-ticker weight-of-equity fractions into BUY/SELL orders, given
+    each candidate's price. A ticker missing from ``weights`` (e.g. no vol
+    estimate yet) is skipped."""
+    orders: list[OrderEvent] = []
+    for ticker, score, price in candidates:
+        if ticker not in weights:
+            logger.debug("%s  %s: no weight assigned, skipping open", timestamp, ticker)
+            continue
+        qty = round(weights[ticker] * equity / price)
+        if qty == 0:
+            logger.debug(
+                "%s  %s: weight=%.5f rounds to 0 shares, skipping open",
+                timestamp,
+                ticker,
+                weights[ticker],
+            )
+            continue
+        direction: Literal["BUY", "SELL"] = "BUY" if qty > 0 else "SELL"
+        reason = f"score={score:.3f} weight={weights[ticker]:.5f}"
+        log_trade(logger, timestamp, "OPEN", direction, ticker, abs(qty), price, reason)
+        orders.append(
+            OrderEvent(
+                timestamp=timestamp,
+                ticker=ticker,
+                quantity=abs(qty),
+                direction=direction,
+            )
+        )
+    return orders
 
 
 class InverseVolPortfolio(BasePortfolio):
@@ -52,13 +160,9 @@ class InverseVolPortfolio(BasePortfolio):
         vol_window: int = 20,
         max_gross: float = 1.0,
     ) -> None:
-        super().__init__(
-            price_source=price_source,
-            initial_cash=initial_cash,
-            entry_threshold=entry_threshold,
-            exit_threshold=exit_threshold,
-            max_gross=max_gross,
-        )
+        super().__init__(price_source=price_source, initial_cash=initial_cash, max_gross=max_gross)
+        self._entry_threshold = entry_threshold
+        self._exit_threshold = exit_threshold
         self._vol_window = vol_window
         self._returns: dict[Ticker, deque[float]] = {}
         self._last_price: dict[Ticker, float] = {}
@@ -70,7 +174,7 @@ class InverseVolPortfolio(BasePortfolio):
         self._record_returns_for_vol(set(event.scores) | set(self._positions), event.timestamp)
         equity = self.mark_to_market()
 
-        close_orders, open_candidates = partition_signal(
+        close_orders, open_candidates = _partition_signal(
             event.scores,
             self._positions,
             self._price_source,
@@ -105,11 +209,11 @@ class InverseVolPortfolio(BasePortfolio):
         weights = self._target_weights(event, candidates, available)
         if not weights:
             return []
-        return size_to_orders(weights, candidates, equity, event.timestamp)
+        return _size_to_orders(weights, candidates, equity, event.timestamp)
 
     def _record_returns_for_vol(self, tickers: set[Ticker], timestamp: datetime) -> None:
         """Append each ticker's latest log return to its trailing window, giving
-        ``annualized_vol`` the history it works from. ``Bar`` guarantees prices
+        ``_annualized_vol`` the history it works from. ``Bar`` guarantees prices
         are positive, so the only bar skipped is a ticker's first observation
         (no prior price to diff against)."""
         for ticker in tickers:
@@ -138,7 +242,7 @@ class InverseVolPortfolio(BasePortfolio):
     ) -> Mapping[Ticker, float]:
         raw: dict[Ticker, float] = {}
         for ticker, score, _ in candidates:
-            vol = annualized_vol(self._returns.get(ticker), self._vol_window)
+            vol = _annualized_vol(self._returns.get(ticker), self._vol_window)
             if vol is None:
                 logger.debug(
                     "%s  %s: vol not ready (%d/%d returns), skipping open",

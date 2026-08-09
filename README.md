@@ -1,6 +1,6 @@
 # backtester
 
-Event-driven backtesting engine for factor-model equity strategies.
+Event-driven backtesting engine for equity strategies.
 
 [![CI](https://github.com/KaitoFuss/backtester/actions/workflows/ci.yml/badge.svg)](https://github.com/KaitoFuss/backtester/actions/workflows/ci.yml)
 ![coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)
@@ -25,20 +25,18 @@ benchmark), entry-referenced stop-loss/take-profit/max-holding risk checks,
 and a multi-page PDF performance report (equity curve, drawdown, trade
 stats, monthly returns, return correlation).
 
-This is the engine — it's built to have factor strategies developed on top
-of it, not to make a return claim itself. See [ARCHITECTURE.md](ARCHITECTURE.md)
-for the full design writeup.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design writeup.
 
 ## Sample output
 
 ![Score Scaling Neutral performance overview](examples/reports/score_scaling_neutral_overview.png)
 
 A dollar-neutral z-score mean-reversion strategy vs. an equal-weight
-buy-and-hold benchmark, both on the same 8-ETF universe, 2015–2025.
-**This is an unoptimized reference configuration included to demonstrate
-the engine and its reporting, not a claim of alpha** — see
-[`examples/reports/`](examples/reports/) for both committed sample reports,
-the numbers behind them, and how to regenerate them.
+buy-and-hold benchmark, both on the same 8-ETF universe, 2015–2025. This is
+an unoptimized reference strategy included to demonstrate the engine and
+its reporting — see [`examples/reports/`](examples/reports/) for both
+committed sample reports, the numbers behind them, and how to regenerate
+them.
 
 ## Quickstart
 
@@ -86,8 +84,8 @@ uv run --with pre-commit pre-commit install
 
 - `mypy --strict` across `src` and `tests`.
 - Ruff for lint + format; rule set and config live in `pyproject.toml`.
-- Structural `Protocol`s over inheritance/ABCs for every pluggable
-  component (see `core/engine.py`).
+- Structural typing via `Protocol` over inheritance/ABCs for every
+  pluggable component (see `core/engine.py`).
 - Tests mirror `src/backtester/` module paths 1:1 under `tests/`.
 - Dependencies are added via `uv add` / `uv add --dev`, never by hand-editing
   `pyproject.toml`.

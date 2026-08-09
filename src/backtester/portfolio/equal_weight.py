@@ -4,8 +4,7 @@ from typing import Literal
 
 from backtester.core.events import OrderEvent, SignalEvent
 from backtester.core.trade_log import log_trade
-from backtester.portfolio.base import BasePortfolio
-from backtester.portfolio.utils import existing_gross
+from backtester.portfolio.base import BasePortfolio, existing_gross
 
 logger = logging.getLogger(__name__)
 
