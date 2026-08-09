@@ -280,10 +280,16 @@ def _add_monthly_page(pdf: PdfPages, monthly_tables: Mapping[str, pd.DataFrame])
     _save_page(pdf, fig)
 
 
+def _format_config_value(value: object) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return str(value)
+    return f"{value:,}"
+
+
 def _add_config_page(pdf: PdfPages, config: BacktestConfig) -> None:
     fig = _new_page("Backtest Configuration")
     ax = fig.add_axes((0.06, 0.07, 0.88, 0.79))
-    rows = [[key, str(value)] for key, value in asdict(config).items()]
+    rows = [[key, _format_config_value(value)] for key, value in asdict(config).items()]
     _style_table(ax, rows, ["Field", "Value"], cellLoc="left", colWidths=[0.35, 0.65])
     _save_page(pdf, fig)
 
