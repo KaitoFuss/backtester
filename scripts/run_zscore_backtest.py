@@ -3,6 +3,18 @@ alongside a buy-and-hold benchmark, and write a performance report PDF.
 
 Usage:
     uv run scripts/run_zscore_backtest.py configs/zscore_backtest.json
+
+The strategy leg's portfolio comes from `config.portfolio`; the benchmark leg is
+always equal-weight buy-and-hold. Three configs run the same signal and universe
+through each sizing model, so their reports are directly comparable:
+
+    configs/zscore_backtest.json           inverse_vol, band trading + risk exits
+    configs/zscore_rebalanced.json         score_proportional, rebalanced every bar
+    configs/zscore_rebalanced_neutral.json score_proportional + dollar_neutral
+
+Note the neutral config keeps entry_threshold=2.0 for comparability, which is
+restrictive once scores are demeaned: a lone surviving name demeans to exactly
+zero, so the book needs two names crossing at once to hold anything at all.
 """
 
 from __future__ import annotations
@@ -16,8 +28,8 @@ from backtester.config import BacktestConfig
 from backtester.core.engine import Engine, Portfolio, PriceSource, RiskManager, Strategy
 from backtester.data.parquet_market_data import ParquetMarketData
 from backtester.execution.ideal import IdealExecutionHandler
-from backtester.portfolio.score_proportional import ScoreProportionalPortfolio
-from backtester.portfolio.vol_weighted import VolWeightedPortfolio
+from backtester.portfolio.equal_weight import EqualWeightPortfolio
+from backtester.portfolio.factory import build_portfolio
 from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
@@ -59,6 +71,21 @@ def _run_backtest(
     return tracker
 
 
+def _warn_if_risk_exits_fight_rebalancing(config: BacktestConfig) -> None:
+    """`PositionExitRiskManager` measures every threshold from a position's
+    entry, which a continuously rebalanced book no longer really has — and a
+    forced exit is re-entered at full size on the next bar, since the score
+    that sized it is still there. The config is honored either way; this just
+    makes the pairing visible."""
+    exits = (config.stop_loss_pct, config.take_profit_pct, config.max_holding_days)
+    if config.portfolio == "score_proportional" and any(e is not None for e in exits):
+        logger.warning(
+            "portfolio=score_proportional rebalances every bar, so entry-referenced risk "
+            "exits will be re-entered on the next bar; consider nulling stop_loss_pct / "
+            "take_profit_pct / max_holding_days"
+        )
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: run_zscore_backtest.py <config.json>")
@@ -69,20 +96,14 @@ def main() -> None:
     )
     data_dir = Path(config.data)
 
+    _warn_if_risk_exits_fight_rebalancing(config)
+
     logger.info("Running backtest on %s …", data_dir)
     strategy_tracker = _run_backtest(
         data_dir,
         config.tickers,
         ZScoreMovingAverageStrategy(window=config.window, winsor_limit=config.winsor_limit),
-        lambda price_source: VolWeightedPortfolio(
-            price_source=price_source,
-            initial_cash=config.initial_cash,
-            entry_threshold=config.entry_threshold,
-            exit_threshold=config.exit_threshold,
-            vol_window=config.vol_window,
-            max_gross=config.max_gross,
-            target_vol=config.target_vol,
-        ),
+        lambda price_source: build_portfolio(config, price_source),
         lambda portfolio: PositionExitRiskManager(
             portfolio=portfolio,
             stop_loss_pct=config.stop_loss_pct,
@@ -90,14 +111,14 @@ def main() -> None:
             max_holding_days=config.max_holding_days,
         ),
     )
-    # Buy & Hold is a passive reference, not a strategy under test — it never
-    # exits, so none of the strategy's risk-exit config (stop-loss,
-    # take-profit, max-holding-days) applies to it.
+    # Buy & Hold is a fixed passive reference, not a thing under test, so it
+    # keeps its own portfolio regardless of config.portfolio. It never exits,
+    # so none of the strategy's risk-exit config applies to it either.
     benchmark_tracker = _run_backtest(
         data_dir,
         config.tickers,
         BuyAndHoldStrategy(),
-        lambda price_source: ScoreProportionalPortfolio(
+        lambda price_source: EqualWeightPortfolio(
             price_source=price_source, initial_cash=config.initial_cash, max_gross=config.max_gross
         ),
         lambda portfolio: None,

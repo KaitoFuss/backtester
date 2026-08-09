@@ -1,16 +1,13 @@
 {
   "data": "data/raw",
   "tickers": ["SPY", "QQQ", "TLT", "IEF", "GLD", "DBC", "UUP", "FXE"],
-  "portfolio": "inverse_vol",
+  "portfolio": "score_proportional",
   "window": 20,
   "initial_cash": 100000.0,
   "entry_threshold": 2.0,
   "exit_threshold": 0.5,
-  "vol_window": 20,
   "max_gross": 1.0,
+  "dollar_neutral": true,
   "winsor_limit": 3.0,
-  "stop_loss_pct": 0.08,
-  "take_profit_pct": 0.15,
-  "max_holding_days": 60,
   "output_dir": "output"
 }
