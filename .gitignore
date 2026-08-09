@@ -26,8 +26,10 @@ htmlcov/
 .DS_Store
 
 # Claude Code
-.claude/settings.local.json
-.claude/worktrees/
+.claude/
+
+# RTK
+.rtk/
 
 # Build artifacts
 dist/
