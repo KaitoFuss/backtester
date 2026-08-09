@@ -30,13 +30,14 @@ class ScoreProportionalPortfolio(BasePortfolio):
     untouched, and the gross it occupies is reserved before the rest of the
     budget is shared out.
 
-    With ``dollar_neutral``, the surviving nonzero scores are demeaned before
-    they are normalized, so the signed weights sum to zero and the book
-    carries no net market exposure. Note this makes weights relative: a
-    ticker with a positive score sitting *below* the cross-sectional mean is
-    shorted, which is the point in a relative-value book and surprising
-    anywhere else. When only one ticker has a nonzero score it demeans to
-    exactly zero, so no position is taken.
+    With ``dollar_neutral``, every scored ticker's score (including an exact
+    ``0.0``, a real reading, not a placeholder for "no opinion") is demeaned
+    before normalizing, so the signed weights sum to zero and the book
+    carries no net market exposure. This makes weights relative: a ticker
+    sitting *below* the cross-sectional mean is shorted regardless of its own
+    sign, which is the point in a relative-value book and surprising
+    anywhere else. When only one ticker is scored it demeans to exactly zero
+    against itself, so no position is taken.
 
     Turnover is deliberately uncontrolled — there is no drift band yet, so any
     change in score retrades. Until the execution layer models slippage and
@@ -80,17 +81,10 @@ class ScoreProportionalPortfolio(BasePortfolio):
             for ticker, score in event.scores.items()
             if self._price_source.get_price(ticker) is not None
         }
-        if self._dollar_neutral:
-            # Demean only the names carrying a nonzero score — folding an exact
-            # zero into the mean would hand it a weight it never asked for.
-            nonzero = {ticker: score for ticker, score in scored.items() if score != 0.0}
-            if nonzero:
-                mean = sum(nonzero.values()) / len(nonzero)
-                scored = {
-                    ticker: score - mean if score != 0.0 else 0.0
-                    for ticker, score in scored.items()
-                }
-                logger.debug("%s  demeaned scores by %.5f for neutrality", event.timestamp, mean)
+        if self._dollar_neutral and scored:
+            mean = sum(scored.values()) / len(scored)
+            scored = {ticker: score - mean for ticker, score in scored.items()}
+            logger.debug("%s  demeaned scores by %.5f for neutrality", event.timestamp, mean)
 
         total_abs = sum(abs(score) for score in scored.values())
         weights = dict.fromkeys(scored, 0.0)

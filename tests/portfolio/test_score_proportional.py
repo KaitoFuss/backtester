@@ -179,6 +179,21 @@ def test_dollar_neutral_shorts_a_positive_score_below_the_mean() -> None:
     assert b.direction == "SELL"
 
 
+def test_dollar_neutral_shorts_an_exact_zero_score_below_the_mean() -> None:
+    prices = FakePriceSource({"A": 100.0, "B": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=10_000.0, dollar_neutral=True
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"A": 2.0, "B": 0.0}))
+
+    b = next(o for o in orders if o.ticker == "B")
+    # A 0.0 score is a real reading (not a "no opinion" placeholder), so it
+    # takes part in demeaning like any other score: here it sits below the
+    # cross-sectional mean of 1.0, so relative value shorts it too.
+    assert b.direction == "SELL"
+
+
 def test_dollar_neutral_with_a_single_survivor_takes_no_position() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
     portfolio = ScoreProportionalPortfolio(
