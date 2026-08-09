@@ -7,11 +7,12 @@ from datetime import datetime
 
 import pandas as pd
 
-from backtester.constants import TRADING_DAYS_PER_YEAR
 from backtester.core.engine import PortfolioView
 from backtester.core.events import FillEvent, MarketEvent, Ticker
 
 logger = logging.getLogger(__name__)
+
+TRADING_DAYS_PER_YEAR = 252
 
 
 @dataclass(frozen=True)

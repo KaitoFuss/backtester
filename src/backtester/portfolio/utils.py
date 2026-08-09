@@ -7,10 +7,10 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Literal
 
-from backtester.constants import TRADING_DAYS_PER_YEAR
 from backtester.core.engine import PriceSource
 from backtester.core.events import FillEvent, OrderEvent, Position, Ticker
 from backtester.core.trade_log import log_trade
+from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
 
 logger = logging.getLogger(__name__)
 
