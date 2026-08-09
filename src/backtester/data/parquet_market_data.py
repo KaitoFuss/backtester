@@ -49,15 +49,14 @@ class ParquetMarketData:
         if self._tickers is not None:
             df = df[df.index.isin(self._tickers)]
 
-        cols = set(df.columns.tolist())
         bars: dict[str, Bar] = {}
         for ticker, row in df.iterrows():
             bar = Bar(
                 close=float(row["close"]),
-                open=float(row["open"]) if "open" in cols else None,
-                high=float(row["high"]) if "high" in cols else None,
-                low=float(row["low"]) if "low" in cols else None,
-                volume=float(row["volume"]) if "volume" in cols else None,
+                open=float(row["open"]) if "open" in df.columns else None,
+                high=float(row["high"]) if "high" in df.columns else None,
+                low=float(row["low"]) if "low" in df.columns else None,
+                volume=float(row["volume"]) if "volume" in df.columns else None,
             )
             bars[str(ticker)] = bar
             self._last_price[str(ticker)] = bar.close

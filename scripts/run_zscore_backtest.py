@@ -21,9 +21,12 @@ from backtester.portfolio.vol_weighted import VolWeightedPortfolio
 from backtester.risk.exits import PositionExitRiskManager
 from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.strategy.zscore_ma import ZScoreMovingAverageStrategy
-from backtester.tracker.metrics import PerformanceTracker
+from backtester.tracker.metrics import (
+    PerformanceTracker,
+    monthly_returns_table,
+    strategy_correlation_matrix,
+)
 from backtester.tracker.report import save_report
-from backtester.tracker.reporting import monthly_returns_table, strategy_correlation_matrix
 
 logger = logging.getLogger(__name__)
 

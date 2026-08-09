@@ -1,7 +1,11 @@
+import calendar
 import logging
 import statistics
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+
+import pandas as pd
 
 from backtester.core.engine import PortfolioView
 from backtester.core.events import FillEvent, MarketEvent, Ticker
@@ -35,6 +39,10 @@ class TradeMetrics:
 
 @dataclass(frozen=True)
 class _Trade:
+    """A closed round-trip: a signed entry quantity opened at ``entry_price``
+    and flattened at ``exit_price``. ``quantity`` sign carries direction, so
+    ``pnl`` is correct for both longs and shorts."""
+
     ticker: Ticker
     quantity: int
     entry_price: float
@@ -49,6 +57,16 @@ class _Trade:
             - self.entry_commission
             - self.exit_commission
         )
+
+
+@dataclass
+class _OpenLot:
+    """The still-open position for a ticker, as reconstructed from the fill
+    stream. Mutable: fills add to it (weighted-average entry) or reduce it."""
+
+    signed_qty: int
+    avg_entry_price: float
+    entry_commission: float
 
 
 def sharpe_ratio(annualized_return: float, annualized_vol: float) -> float:
@@ -68,9 +86,8 @@ class PerformanceTracker:
     def __init__(self, portfolio: PortfolioView) -> None:
         self._portfolio = portfolio
         self._mark_to_market_history: list[tuple[datetime, float]] = []
-        self._open_trades: dict[Ticker, _Trade] = {}
+        self._open_lots: dict[Ticker, _OpenLot] = {}
         self._trades: list[_Trade] = []
-        self._open_tickers: set[Ticker] = set()
         self._bars_in_market = 0
         self._traded_notional = 0.0
 
@@ -87,35 +104,42 @@ class PerformanceTracker:
         equity = self._portfolio.mark_to_market()
         self._mark_to_market_history.append((event.timestamp, equity))
         logger.debug("%s: equity=%.2f", event.timestamp, equity)
-        if self._open_tickers:
+        if self._open_lots:
             self._bars_in_market += 1
 
     def track_fill(self, event: FillEvent) -> None:
+        # A self-contained running-lot ledger, built only from the fill stream,
+        # so trade pairing never depends on the portfolio's internal state or on
+        # this hook running before the portfolio applies the fill. Handles the
+        # general open / add / reduce / close / flip cases, not just the
+        # flat -> open -> flat cycle the current portfolios happen to produce.
         self._traded_notional += event.quantity * event.fill_price
-        position_before = self._portfolio.get_position(event.ticker)
+        signed = event.quantity if event.direction == "BUY" else -event.quantity
+        lot = self._open_lots.get(event.ticker)
 
-        if position_before is None:
-            self._open_trades[event.ticker] = _Trade(
-                ticker=event.ticker,
-                quantity=event.quantity if event.direction == "BUY" else -event.quantity,
-                entry_price=event.fill_price,
-                exit_price=event.fill_price,
-                entry_commission=event.commission,
-                exit_commission=0.0,
-            )
-            self._open_tickers.add(event.ticker)
+        if lot is None:
+            self._open_lots[event.ticker] = _OpenLot(signed, event.fill_price, event.commission)
             return
 
-        open_trade = self._open_trades.pop(event.ticker, None)
-        self._open_tickers.discard(event.ticker)
-        if open_trade is None:
+        if (lot.signed_qty > 0) == (signed > 0):
+            # Same direction: scale in, weighting the entry price by quantity.
+            total_qty = lot.signed_qty + signed
+            lot.avg_entry_price = (
+                lot.avg_entry_price * abs(lot.signed_qty) + event.fill_price * abs(signed)
+            ) / abs(total_qty)
+            lot.signed_qty = total_qty
+            lot.entry_commission += event.commission
             return
+
+        # Opposite direction: close part or all of the position (and maybe flip).
+        closed_qty = min(abs(signed), abs(lot.signed_qty))
+        entry_commission = lot.entry_commission * closed_qty / abs(lot.signed_qty)
         closed_trade = _Trade(
-            ticker=open_trade.ticker,
-            quantity=open_trade.quantity,
-            entry_price=open_trade.entry_price,
+            ticker=event.ticker,
+            quantity=closed_qty if lot.signed_qty > 0 else -closed_qty,
+            entry_price=lot.avg_entry_price,
             exit_price=event.fill_price,
-            entry_commission=open_trade.entry_commission,
+            entry_commission=entry_commission,
             exit_commission=event.commission,
         )
         self._trades.append(closed_trade)
@@ -128,6 +152,20 @@ class PerformanceTracker:
             closed_trade.pnl,
         )
 
+        remaining = lot.signed_qty + signed
+        if remaining == 0:
+            del self._open_lots[event.ticker]
+        elif (remaining > 0) == (lot.signed_qty > 0):
+            # Partial close: same direction, smaller size, same cost basis.
+            lot.signed_qty = remaining
+            lot.entry_commission -= entry_commission
+        else:
+            # Flip: this fill closed the old position and opened a new one in
+            # the opposite direction with the leftover quantity. The fill's
+            # commission is attributed to the close above; the reopened lot
+            # carries none.
+            self._open_lots[event.ticker] = _OpenLot(remaining, event.fill_price, 0.0)
+
     @property
     def mark_to_market_history(self) -> list[tuple[datetime, float]]:
         return list(self._mark_to_market_history)
@@ -136,15 +174,25 @@ class PerformanceTracker:
         if len(self._mark_to_market_history) < 2:
             return PerformanceMetrics(0.0, 0.0, 0.0, 0.0, 0.0)
 
+        timestamps = [timestamp for timestamp, _ in self._mark_to_market_history]
         values = [equity for _, equity in self._mark_to_market_history]
         returns = [values[i] / values[i - 1] - 1 for i in range(1, len(values))]
 
         total_return = values[-1] / values[0] - 1
-        periods_per_year = TRADING_DAYS_PER_YEAR / len(returns)
-        annualized_return = (1 + total_return) ** periods_per_year - 1
-        annualized_vol = (
-            statistics.stdev(returns) * TRADING_DAYS_PER_YEAR**0.5 if len(returns) > 1 else 0.0
-        )
+        # Annualize off elapsed calendar time, not the raw sample count, so that
+        # gaps in the data (empty bars skipped by track_market) don't inflate
+        # the annualized figures. periods_per_year is the observed return
+        # frequency, used to annualize vol by the sqrt-of-time rule.
+        years = (timestamps[-1] - timestamps[0]).days / 365.25
+        if years > 0:
+            annualized_return = (1 + total_return) ** (1 / years) - 1
+            periods_per_year = len(returns) / years
+            annualized_vol = (
+                statistics.stdev(returns) * periods_per_year**0.5 if len(returns) > 1 else 0.0
+            )
+        else:
+            annualized_return = 0.0
+            annualized_vol = 0.0
 
         return PerformanceMetrics(
             total_return=total_return,
@@ -189,3 +237,65 @@ class PerformanceTracker:
             time_in_market=time_in_market,
             turnover=turnover,
         )
+
+
+def monthly_returns_table(history: Sequence[tuple[datetime, float]]) -> pd.DataFrame:
+    """Year x month return grid, with trailing Annual Return / Max DD / Sharpe columns."""
+    if len(history) < 2:
+        return pd.DataFrame()
+
+    sorted_history = sorted(history, key=lambda item: item[0])
+    monthly_last: dict[tuple[int, int], float] = {}
+    for timestamp, value in sorted_history:
+        monthly_last[(timestamp.year, timestamp.month)] = value
+
+    rows: list[dict[str, float | int]] = []
+    prev_value = sorted_history[0][1]
+    for year, month in sorted(monthly_last):
+        value = monthly_last[(year, month)]
+        rows.append({"year": year, "month": month, "return": value / prev_value - 1})
+        prev_value = value
+
+    table = pd.DataFrame(rows)
+    pivot = table.pivot(index="year", columns="month", values="return")
+    pivot = pivot.reindex(columns=range(1, 13))
+    pivot.columns = pd.Index([calendar.month_abbr[m] for m in range(1, 13)])
+
+    annual_returns: list[float] = []
+    max_drawdowns: list[float] = []
+    sharpes: list[float] = []
+    for year in pivot.index:
+        year_values = [value for timestamp, value in sorted_history if timestamp.year == year]
+        if len(year_values) < 2:
+            annual_returns.append(0.0)
+            max_drawdowns.append(0.0)
+            sharpes.append(0.0)
+            continue
+        year_returns = [year_values[i] / year_values[i - 1] - 1 for i in range(1, len(year_values))]
+        annual_return = year_values[-1] / year_values[0] - 1
+        annual_vol = (
+            statistics.stdev(year_returns) * TRADING_DAYS_PER_YEAR**0.5
+            if len(year_returns) > 1
+            else 0.0
+        )
+        annual_returns.append(annual_return)
+        max_drawdowns.append(max_drawdown(year_values))
+        sharpes.append(sharpe_ratio(annual_return, annual_vol))
+
+    pivot["Annual Return"] = annual_returns
+    pivot["Max DD"] = max_drawdowns
+    pivot["Sharpe"] = sharpes
+    return pivot
+
+
+def strategy_correlation_matrix(
+    histories: Mapping[str, Sequence[tuple[datetime, float]]],
+) -> pd.DataFrame:
+    """Pairwise return correlation across strategies, e.g. to check market-neutrality."""
+    returns = {}
+    for label, history in histories.items():
+        index = [timestamp for timestamp, _ in history]
+        values = [value for _, value in history]
+        equity = pd.Series(values, index=pd.DatetimeIndex(index))
+        returns[label] = equity.pct_change().dropna()
+    return pd.DataFrame(returns).corr()

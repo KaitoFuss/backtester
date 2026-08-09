@@ -1,4 +1,7 @@
 import logging
+import math
+import statistics
+from collections import deque
 from collections.abc import Collection, Mapping
 from dataclasses import replace
 from datetime import datetime
@@ -7,8 +10,20 @@ from typing import Literal
 from backtester.core.engine import PriceSource
 from backtester.core.events import FillEvent, OrderEvent, Position, Ticker
 from backtester.core.trade_log import log_trade
+from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
 
 logger = logging.getLogger(__name__)
+
+
+def annualized_vol(returns: deque[float] | None, window: int) -> float | None:
+    """Annualized stdev of a trailing return window, or ``None`` until the
+    window is full or when the sample has no dispersion."""
+    if returns is None or len(returns) < window:
+        return None
+    stdev = statistics.stdev(returns)
+    if stdev == 0:
+        return None
+    return stdev * math.sqrt(TRADING_DAYS_PER_YEAR)
 
 
 def compute_equity(
