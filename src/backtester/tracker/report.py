@@ -56,6 +56,10 @@ _TRADE_ROWS: list[tuple[str, str, str, bool | None]] = [
 ]
 
 
+def _slugify(name: str) -> str:
+    return re.sub(r"[^0-9a-zA-Z]+", "_", name.strip()).strip("_").lower()
+
+
 def _next_report_path(output_dir: Path, stem: str = "report") -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     pattern = re.compile(rf"{re.escape(stem)}_(\d+)\.pdf")
@@ -115,13 +119,14 @@ def _row_colors(
 
 def _add_overview_page(
     pdf: PdfPages,
+    name: str,
     histories: Mapping[str, Sequence[tuple[datetime, float]]],
     metrics: Mapping[str, PerformanceMetrics],
     trade_metrics: Mapping[str, TradeMetrics],
     correlation: pd.DataFrame,
 ) -> None:
     labels = list(metrics)
-    fig = _new_page("Performance Overview")
+    fig = _new_page(f"Performance Overview - {name}")
     grid = fig.add_gridspec(
         1, 2, width_ratios=[1.4, 1], left=0.06, right=0.975, top=0.87, bottom=0.06, wspace=0.22
     )
@@ -292,9 +297,9 @@ def save_report(
     correlation: pd.DataFrame,
     config: BacktestConfig,
 ) -> Path:
-    path = _next_report_path(output_dir)
+    path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
     with PdfPages(path) as pdf:
-        _add_overview_page(pdf, histories, metrics, trade_metrics, correlation)
+        _add_overview_page(pdf, config.name, histories, metrics, trade_metrics, correlation)
         _add_monthly_page(pdf, monthly_tables)
         _add_config_page(pdf, config)
     return path
