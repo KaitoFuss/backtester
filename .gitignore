@@ -31,6 +31,10 @@ htmlcov/
 # RTK
 .rtk/
 
+# Private working notes
+CLAUDE.md
+NOTES.md
+
 # Build artifacts
 dist/
 build/
