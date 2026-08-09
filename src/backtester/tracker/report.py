@@ -44,10 +44,10 @@ _PERFORMANCE_ROWS: list[tuple[str, str, str, bool | None]] = [
     ("Drawdown/vol", "drawdown_to_vol", "{:.2f}", False),
 ]
 _TRADE_ROWS: list[tuple[str, str, str, bool | None]] = [
-    ("Num trades", "num_trades", "{:.0f}", None),
+    ("Num trades", "num_trades", "{:,.0f}", None),
     ("Win rate", "win_rate", "{:.2%}", True),
-    ("Avg win", "avg_win", "{:.2f}", True),
-    ("Avg loss", "avg_loss", "{:.2f}", True),
+    ("Avg win", "avg_win", "{:,.2f}", True),
+    ("Avg loss", "avg_loss", "{:,.2f}", True),
     ("Risk/reward ratio", "risk_reward_ratio", "{:.2f}", True),
     ("Payoff factor", "payoff_factor", "{:.2f}", True),
     ("CPC index", "cpc_index", "{:.2f}", True),
