@@ -20,6 +20,7 @@ class FetchDataConfig:
 
 @dataclass(frozen=True)
 class BacktestConfig:
+    name: str
     data: str
     tickers: list[str] | None = None
     portfolio: str = "inverse_vol"

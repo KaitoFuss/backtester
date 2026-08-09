@@ -21,13 +21,13 @@ class FakePriceSource:
     ],
 )
 def test_each_name_builds_its_portfolio(name: str, expected: type) -> None:
-    config = BacktestConfig(data="data/raw", portfolio=name)
+    config = BacktestConfig(name="test", data="data/raw", portfolio=name)
 
     assert isinstance(build_portfolio(config, FakePriceSource()), expected)
 
 
 def test_unknown_name_raises_with_the_valid_options() -> None:
-    config = BacktestConfig(data="data/raw", portfolio="mean_variance")
+    config = BacktestConfig(name="test", data="data/raw", portfolio="mean_variance")
 
     with pytest.raises(ValueError, match="score_proportional"):
         build_portfolio(config, FakePriceSource())

@@ -1,4 +1,5 @@
 {
+  "name": "score_scaling_neutral",
   "data": "data/raw",
   "tickers": ["SPY", "QQQ", "TLT", "IEF", "GLD", "DBC", "UUP", "FXE"],
   "portfolio": "score_proportional",

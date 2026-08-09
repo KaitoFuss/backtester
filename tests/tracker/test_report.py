@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -35,7 +36,7 @@ def _sample_inputs() -> tuple[
         "Strategy": _history([100_000.0 + i * 100 for i in range(60)]),
         "Buy & Hold": _history([100_000.0 + i * 50 for i in range(60)]),
     }
-    config = BacktestConfig(data="data/raw")
+    config = BacktestConfig(name="Zscore Momentum", data="data/raw")
     return metrics, trade_metrics, histories, config
 
 
@@ -52,7 +53,7 @@ def test_save_report_writes_report_1_pdf_on_first_run(tmp_path: Path) -> None:
         config=config,
     )
 
-    assert path == tmp_path / "report_1.pdf"
+    assert path == tmp_path / "zscore_momentum_report_1.pdf"
     assert path.exists()
     assert path.stat().st_size > 0
 
@@ -81,15 +82,15 @@ def test_save_report_increments_and_never_overwrites(tmp_path: Path) -> None:
         config=config,
     )
 
-    assert first == tmp_path / "report_1.pdf"
-    assert second == tmp_path / "report_2.pdf"
+    assert first == tmp_path / "zscore_momentum_report_1.pdf"
+    assert second == tmp_path / "zscore_momentum_report_2.pdf"
     assert first.exists()
     assert second.exists()
 
 
 def test_save_report_increments_past_gaps_in_existing_files(tmp_path: Path) -> None:
-    (tmp_path / "report_1.pdf").write_bytes(b"existing")
-    (tmp_path / "report_5.pdf").write_bytes(b"existing")
+    (tmp_path / "zscore_momentum_report_1.pdf").write_bytes(b"existing")
+    (tmp_path / "zscore_momentum_report_5.pdf").write_bytes(b"existing")
     metrics, trade_metrics, histories, config = _sample_inputs()
 
     path = save_report(
@@ -102,5 +103,34 @@ def test_save_report_increments_past_gaps_in_existing_files(tmp_path: Path) -> N
         config=config,
     )
 
-    assert path == tmp_path / "report_6.pdf"
-    assert (tmp_path / "report_1.pdf").read_bytes() == b"existing"
+    assert path == tmp_path / "zscore_momentum_report_6.pdf"
+    assert (tmp_path / "zscore_momentum_report_1.pdf").read_bytes() == b"existing"
+
+
+def test_save_report_numbers_each_name_independently(tmp_path: Path) -> None:
+    metrics, trade_metrics, histories, config = _sample_inputs()
+    monthly_tables = {label: monthly_returns_table(h) for label, h in histories.items()}
+    correlation = strategy_correlation_matrix(histories)
+    other_config = replace(config, name="Other Strategy")
+
+    first = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables=monthly_tables,
+        correlation=correlation,
+        config=config,
+    )
+    second = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables=monthly_tables,
+        correlation=correlation,
+        config=other_config,
+    )
+
+    assert first == tmp_path / "zscore_momentum_report_1.pdf"
+    assert second == tmp_path / "other_strategy_report_1.pdf"

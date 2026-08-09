@@ -47,17 +47,18 @@ def test_fetch_data_config_unknown_field_raises(tmp_path: Path) -> None:
 
 
 def test_backtest_config_applies_defaults(tmp_path: Path) -> None:
-    path = _write(tmp_path, {"data": "data/raw"})
+    path = _write(tmp_path, {"name": "test", "data": "data/raw"})
 
     config = BacktestConfig.from_json(path)
 
-    assert config == BacktestConfig(data="data/raw")
+    assert config == BacktestConfig(name="test", data="data/raw")
 
 
 def test_backtest_config_overrides_defaults(tmp_path: Path) -> None:
     path = _write(
         tmp_path,
         {
+            "name": "test",
             "data": "data/raw",
             "tickers": ["AAPL"],
             "window": 10,
@@ -76,6 +77,7 @@ def test_backtest_config_overrides_sizing_defaults(tmp_path: Path) -> None:
     path = _write(
         tmp_path,
         {
+            "name": "test",
             "data": "data/raw",
             "portfolio": "score_proportional",
             "vol_window": 10,
