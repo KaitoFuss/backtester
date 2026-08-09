@@ -88,7 +88,6 @@ class PerformanceTracker:
         self._mark_to_market_history: list[tuple[datetime, float]] = []
         self._open_lots: dict[Ticker, _OpenLot] = {}
         self._trades: list[_Trade] = []
-        self._open_tickers: set[Ticker] = set()
         self._bars_in_market = 0
         self._traded_notional = 0.0
 
@@ -105,7 +104,7 @@ class PerformanceTracker:
         equity = self._portfolio.mark_to_market()
         self._mark_to_market_history.append((event.timestamp, equity))
         logger.debug("%s: equity=%.2f", event.timestamp, equity)
-        if self._open_tickers:
+        if self._open_lots:
             self._bars_in_market += 1
 
     def track_fill(self, event: FillEvent) -> None:
@@ -120,7 +119,6 @@ class PerformanceTracker:
 
         if lot is None:
             self._open_lots[event.ticker] = _OpenLot(signed, event.fill_price, event.commission)
-            self._open_tickers.add(event.ticker)
             return
 
         if (lot.signed_qty > 0) == (signed > 0):
@@ -157,7 +155,6 @@ class PerformanceTracker:
         remaining = lot.signed_qty + signed
         if remaining == 0:
             del self._open_lots[event.ticker]
-            self._open_tickers.discard(event.ticker)
         elif (remaining > 0) == (lot.signed_qty > 0):
             # Partial close: same direction, smaller size, same cost basis.
             lot.signed_qty = remaining
