@@ -22,6 +22,7 @@ class PerformanceMetrics:
     annualized_vol: float
     sharpe: float
     max_drawdown: float
+    drawdown_to_vol: float
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,14 @@ class _OpenLot:
 
 def sharpe_ratio(annualized_return: float, annualized_vol: float) -> float:
     return annualized_return / annualized_vol if annualized_vol > 0 else 0.0
+
+
+def drawdown_to_vol_ratio(max_drawdown: float, annualized_vol: float) -> float:
+    """Depth of the worst drawdown per unit of annualized volatility. Higher
+    means drawdowns are deep relative to the return dispersion that produced
+    them. Uses ``abs(max_drawdown)`` so the ratio is positive; ``0.0`` when
+    there is no volatility to normalize against."""
+    return abs(max_drawdown) / annualized_vol if annualized_vol > 0 else 0.0
 
 
 def max_drawdown(values: list[float]) -> float:
@@ -172,7 +181,7 @@ class PerformanceTracker:
 
     def metrics(self) -> PerformanceMetrics:
         if len(self._mark_to_market_history) < 2:
-            return PerformanceMetrics(0.0, 0.0, 0.0, 0.0, 0.0)
+            return PerformanceMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
         timestamps = [timestamp for timestamp, _ in self._mark_to_market_history]
         values = [equity for _, equity in self._mark_to_market_history]
@@ -200,6 +209,7 @@ class PerformanceTracker:
             annualized_vol=annualized_vol,
             sharpe=sharpe_ratio(annualized_return, annualized_vol),
             max_drawdown=max_drawdown(values),
+            drawdown_to_vol=drawdown_to_vol_ratio(max_drawdown(values), annualized_vol),
         )
 
     def trade_metrics(self) -> TradeMetrics:

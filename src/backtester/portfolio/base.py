@@ -20,9 +20,11 @@ class BasePortfolio:
     Every portfolio here moves positions through the same discrete
     flat -> open -> flat cycle: a flat ticker opens only once ``abs(score)``
     reaches ``entry_threshold``, sized once from that bar's signal; an open
-    position is held unchanged until a sign flip, a sub-``exit_threshold``
-    score, or a zero score closes it; a ticker absent from a signal's
-    ``scores`` is left untouched (hold). Because held positions are never
+    position is held unchanged until its score, signed into the held direction
+    (``score * held_sign``), falls below ``exit_threshold`` — which closes both
+    on a reversal to the opposite sign and on conviction decaying in the held
+    direction; a ticker absent from a signal's ``scores`` is left untouched
+    (hold). Because held positions are never
     resized, new opens may only claim the gross budget those positions leave
     free under ``max_gross`` (the leverage cap, gross exposure as a multiple
     of equity: ``1.0`` = fully invested, ``2.0`` = up to 2x long/short).

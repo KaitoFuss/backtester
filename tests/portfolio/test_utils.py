@@ -116,6 +116,21 @@ def test_partition_signal_holds_matching_sign_above_exit_threshold() -> None:
     assert candidates == []
 
 
+def test_partition_signal_holds_zero_score_at_zero_exit_threshold() -> None:
+    # The signed-score exit gate is strict (score * held_sign < exit_threshold),
+    # so a zero score at the default exit_threshold=0.0 holds rather than closes:
+    # 0 < 0 is false. A reversal to the opposite sign still closes.
+    prices = FakePriceSource({"AAPL": 100.0})
+    positions = {"AAPL": Position(ticker="AAPL", quantity=10, entry_price=90.0, entry_date=TS)}
+
+    closes, candidates = partition_signal(
+        {"AAPL": 0.0}, positions, prices, entry_threshold=0.0, exit_threshold=0.0, timestamp=TS
+    )
+
+    assert closes == []
+    assert candidates == []
+
+
 def test_partition_signal_skips_unpriced_ticker() -> None:
     prices = FakePriceSource({})
 

@@ -41,6 +41,7 @@ _PERFORMANCE_ROWS: list[tuple[str, str, str, bool | None]] = [
     ("Annualized vol", "annualized_vol", "{:.2%}", False),
     ("Sharpe", "sharpe", "{:.2f}", True),
     ("Max drawdown", "max_drawdown", "{:.2%}", True),
+    ("Drawdown/vol", "drawdown_to_vol", "{:.2f}", False),
 ]
 _TRADE_ROWS: list[tuple[str, str, str, bool | None]] = [
     ("Num trades", "num_trades", "{:.0f}", None),
