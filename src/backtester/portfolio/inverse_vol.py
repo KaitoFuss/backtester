@@ -26,6 +26,17 @@ def _annualized_vol(returns: deque[float] | None, window: int) -> float | None:
     return stdev * math.sqrt(TRADING_DAYS_PER_YEAR)
 
 
+def _sign(score: float) -> float:
+    """True mathematical sign, unlike ``math.copysign`` which always returns
+    +-1.0 and would otherwise force a direction onto an exact 0.0 (a real
+    reading, not a placeholder) based on nothing but its float sign bit."""
+    if score > 0:
+        return 1.0
+    if score < 0:
+        return -1.0
+    return 0.0
+
+
 def _partition_signal(
     scores: Mapping[Ticker, float],
     positions: Mapping[Ticker, Position],
@@ -53,7 +64,7 @@ def _partition_signal(
         position = positions.get(ticker)
         current_qty = position.quantity if position else 0
         if current_qty == 0:
-            if score == 0 or abs(score) < entry_threshold:
+            if abs(score) < entry_threshold:
                 logger.debug(
                     "%s  %s: score=%.3f below entry_threshold=%.3f, no open",
                     timestamp,
@@ -242,7 +253,7 @@ class InverseVolPortfolio(BasePortfolio):
                 )
                 continue
             logger.debug("%s  %s: annualized_vol=%.4f", event.timestamp, ticker, vol)
-            raw[ticker] = math.copysign(1.0, score) / vol
+            raw[ticker] = _sign(score) / vol
 
         total_abs_raw = sum(abs(r) for r in raw.values())
         if total_abs_raw == 0.0:

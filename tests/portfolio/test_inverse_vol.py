@@ -38,6 +38,24 @@ def test_zero_score_without_position_yields_no_orders() -> None:
     assert orders == []
 
 
+def test_zero_score_with_ready_vol_still_yields_no_order() -> None:
+    prices = MutablePriceSource(AAPL=100.0)
+    portfolio = InverseVolPortfolio(price_source=prices, initial_cash=10_000.0, vol_window=2)
+
+    # Unlike the vol-not-ready case above, vol is ready here: a 0.0 score
+    # must still yield no order, but via the sign function naturally zeroing
+    # its weight rather than being gated out before reaching it.
+    filled = _warm_and_open(
+        portfolio,
+        prices,
+        paths={"AAPL": [100.0, 105.0]},
+        open_price={"AAPL": 103.0},
+        scores={"AAPL": 0.0},
+    )
+
+    assert filled == {}
+
+
 def test_zero_score_closes_existing_position() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
     portfolio = InverseVolPortfolio(price_source=prices, initial_cash=10_000.0, exit_threshold=0.1)
