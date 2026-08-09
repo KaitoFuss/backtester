@@ -1,17 +1,33 @@
 [project]
 name = "backtester"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "Event-driven backtesting engine for factor-model equity strategies."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Kaito", email = "kaito.fuss@gmail.com" }
 ]
 requires-python = ">=3.12"
+keywords = ["backtesting", "quantitative-finance", "event-driven", "trading", "factor-models", "portfolio-construction"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Typing :: Typed",
+]
 dependencies = [
     "matplotlib>=3.11.0",
     "pandas>=3.0.3",
     "pyarrow>=24.0.0",
     "yfinance>=1.5.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/KaitoFuss/backtester"
+Repository = "https://github.com/KaitoFuss/backtester"
+Issues = "https://github.com/KaitoFuss/backtester/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]
@@ -67,7 +83,7 @@ module = "yfinance.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=backtester --cov-report=term-missing"
+addopts = "--cov=backtester --cov-report=term-missing --cov-fail-under=95"
 testpaths = ["tests"]
 
 [tool.coverage.run]
