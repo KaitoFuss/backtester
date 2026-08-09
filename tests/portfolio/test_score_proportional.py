@@ -21,15 +21,14 @@ def test_signal_sizes_orders_proportional_to_score() -> None:
     prices = FakePriceSource({"AAPL": 100.0, "MSFT": 200.0})
     portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
 
-    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0, "MSFT": -1.0}))
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 3.0, "MSFT": -1.0}))
 
-    assert {o.ticker for o in orders} == {"AAPL", "MSFT"}
     aapl = next(o for o in orders if o.ticker == "AAPL")
     msft = next(o for o in orders if o.ticker == "MSFT")
     assert aapl.direction == "BUY"
-    assert aapl.quantity == round(0.5 * 10_000.0 / 100.0)
+    assert aapl.quantity == round(0.75 * 10_000.0 / 100.0)
     assert msft.direction == "SELL"
-    assert msft.quantity == round(0.5 * 10_000.0 / 200.0)
+    assert msft.quantity == round(0.25 * 10_000.0 / 200.0)
 
 
 def test_equal_scores_split_the_budget_evenly() -> None:
@@ -79,16 +78,181 @@ def test_zero_score_closes_existing_position() -> None:
     assert orders[0].quantity == 10
 
 
-def test_absent_ticker_holds_existing_position() -> None:
-    prices = FakePriceSource({"AAPL": 100.0, "MSFT": 200.0})
+def test_absent_ticker_is_held_and_reserves_its_gross() -> None:
+    prices = FakePriceSource({"AAPL": 100.0, "MSFT": 100.0})
     portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
+    # Hold 60 shares of MSFT = $6000 = 60% of equity; MSFT is not scored below,
+    # so it must be left alone and its 60% withheld from AAPL's budget.
     portfolio.process_fill(
-        FillEvent(timestamp=TS, ticker="MSFT", quantity=5, direction="BUY", fill_price=200.0)
+        FillEvent(timestamp=TS, ticker="MSFT", quantity=60, direction="BUY", fill_price=100.0)
     )
 
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0}))
 
     assert all(o.ticker != "MSFT" for o in orders)
+    aapl = next(o for o in orders if o.ticker == "AAPL")
+    assert aapl.quantity == round(0.4 * 10_000.0 / 100.0)
+
+
+def test_stronger_score_scales_an_existing_position_up_by_the_delta() -> None:
+    prices = FakePriceSource({"AAPL": 100.0, "MSFT": 100.0})
+    portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
+
+    portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0, "MSFT": 1.0}))
+    for ticker in ("AAPL", "MSFT"):
+        portfolio.process_fill(
+            FillEvent(timestamp=TS, ticker=ticker, quantity=50, direction="BUY", fill_price=100.0)
+        )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 3.0, "MSFT": 1.0}))
+
+    aapl = next(o for o in orders if o.ticker == "AAPL")
+    msft = next(o for o in orders if o.ticker == "MSFT")
+    # Targets move from 50/50 to 75/25 shares; orders are the deltas only.
+    assert (aapl.direction, aapl.quantity) == ("BUY", 25)
+    assert (msft.direction, msft.quantity) == ("SELL", 25)
+
+
+def test_unchanged_score_produces_no_order() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=100, direction="BUY", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0}))
+
+    assert orders == []
+
+
+def test_sign_flip_crosses_zero_in_a_single_order() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=100, direction="BUY", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": -1.0}))
+
+    assert len(orders) == 1
+    # +100 held, -100 targeted: one 200-share sell rather than a close and an open.
+    assert orders[0].direction == "SELL"
+    assert orders[0].quantity == 200
+
+
+def test_entry_threshold_blocks_weak_signal_when_flat() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.4}))
+
+    assert orders == []
+
+
+def test_entry_threshold_opens_position_once_crossed() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.6}))
+
+    assert len(orders) == 1
+    assert orders[0].direction == "BUY"
+    assert orders[0].quantity == round(1.0 * 10_000.0 / 100.0)
+
+
+def test_gated_out_ticker_does_not_dilute_the_budget() -> None:
+    prices = FakePriceSource({"AAPL": 100.0, "MSFT": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0, "MSFT": 0.4}))
+
+    # MSFT is below the entry threshold, so AAPL takes the whole budget rather
+    # than half of it.
+    assert len(orders) == 1
+    assert orders[0].ticker == "AAPL"
+    assert orders[0].quantity == round(1.0 * 10_000.0 / 100.0)
+
+
+def test_reversal_above_exit_threshold_flips_rather_than_closing() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=100, direction="BUY", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": -0.9}))
+
+    # Unlike the band portfolio, a reversal is conviction the other way rather
+    # than an exit, so the position crosses zero instead of going flat.
+    assert len(orders) == 1
+    assert orders[0].direction == "SELL"
+    assert orders[0].quantity == 200
+
+
+def test_exit_threshold_closes_on_weak_signal() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.1}))
+
+    assert len(orders) == 1
+    assert orders[0].direction == "SELL"
+    assert orders[0].quantity == 10
+
+
+def test_dollar_neutral_weights_sum_to_zero() -> None:
+    prices = FakePriceSource({"A": 100.0, "B": 100.0, "C": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=30_000.0, dollar_neutral=True
+    )
+
+    orders = portfolio.process_signal(
+        SignalEvent(timestamp=TS, scores={"A": 3.0, "B": 1.0, "C": -1.0})
+    )
+
+    signed_notional = sum(
+        (o.quantity if o.direction == "BUY" else -o.quantity) * 100.0 for o in orders
+    )
+    assert signed_notional == pytest.approx(0.0, abs=100.0)
+
+
+def test_dollar_neutral_shorts_a_positive_score_below_the_mean() -> None:
+    prices = FakePriceSource({"A": 100.0, "B": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=10_000.0, dollar_neutral=True
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"A": 3.0, "B": 1.0}))
+
+    b = next(o for o in orders if o.ticker == "B")
+    # B's raw score is positive but sits below the cross-sectional mean of 2.0,
+    # so relative value shorts it.
+    assert b.direction == "SELL"
+
+
+def test_dollar_neutral_with_a_single_survivor_takes_no_position() -> None:
+    prices = FakePriceSource({"AAPL": 100.0})
+    portfolio = ScoreProportionalPortfolio(
+        price_source=prices, initial_cash=10_000.0, dollar_neutral=True
+    )
+
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 2.0}))
+
+    # One name demeans to exactly zero — there is nothing to be neutral against.
+    assert orders == []
 
 
 def test_fill_updates_cash_and_positions() -> None:
@@ -129,42 +293,6 @@ def test_equity_excludes_position_with_missing_price_and_logs_warning(
     assert "MSFT" in caplog.text
 
 
-def test_get_position_tracks_entry_price_and_date() -> None:
-    prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
-    entry = datetime(2024, 3, 1)
-
-    assert portfolio.get_position("AAPL") is None
-
-    portfolio.process_fill(
-        FillEvent(timestamp=entry, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
-    )
-
-    position = portfolio.get_position("AAPL")
-    assert position is not None
-    assert position.quantity == 10
-    assert position.entry_price == 100.0
-    assert position.entry_date == entry
-
-
-def test_adding_to_position_keeps_original_entry() -> None:
-    prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
-    first, second = datetime(2024, 3, 1), datetime(2024, 3, 8)
-    portfolio.process_fill(
-        FillEvent(timestamp=first, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
-    )
-    portfolio.process_fill(
-        FillEvent(timestamp=second, ticker="AAPL", quantity=5, direction="BUY", fill_price=200.0)
-    )
-
-    position = portfolio.get_position("AAPL")
-    assert position is not None
-    assert position.quantity == 15
-    assert position.entry_price == 100.0
-    assert position.entry_date == first
-
-
 def test_closing_position_clears_it() -> None:
     prices = FakePriceSource({"AAPL": 100.0})
     portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
@@ -176,85 +304,3 @@ def test_closing_position_clears_it() -> None:
     )
 
     assert portfolio.get_position("AAPL") is None
-
-
-def test_no_resize_while_held_even_with_stronger_same_sign_score() -> None:
-    prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=100.0)
-
-    portfolio.process_fill(
-        FillEvent(timestamp=TS, ticker="AAPL", quantity=1, direction="BUY", fill_price=100.0)
-    )
-
-    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0}))
-
-    assert orders == []
-
-
-def test_entry_threshold_blocks_weak_signal_when_flat() -> None:
-    prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = ScoreProportionalPortfolio(
-        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5
-    )
-
-    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.4}))
-
-    assert orders == []
-
-
-def test_entry_threshold_opens_position_once_crossed() -> None:
-    prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = ScoreProportionalPortfolio(
-        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5
-    )
-
-    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.6}))
-
-    assert len(orders) == 1
-    assert orders[0].direction == "BUY"
-    assert orders[0].quantity == round(1.0 * 10_000.0 / 100.0)
-
-
-def test_exit_threshold_closes_on_weak_signal() -> None:
-    prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = ScoreProportionalPortfolio(
-        price_source=prices, initial_cash=10_000.0, entry_threshold=0.5, exit_threshold=0.2
-    )
-    portfolio.process_fill(
-        FillEvent(timestamp=TS, ticker="AAPL", quantity=10, direction="BUY", fill_price=100.0)
-    )
-
-    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.1}))
-
-    assert len(orders) == 1
-    assert orders[0].direction == "SELL"
-    assert orders[0].quantity == 10
-
-
-def test_held_position_shrinks_budget_for_a_new_open() -> None:
-    prices = FakePriceSource({"AAPL": 100.0, "MSFT": 100.0})
-    portfolio = ScoreProportionalPortfolio(
-        price_source=prices, initial_cash=10_000.0, max_gross=1.0
-    )
-    # Hold 60 shares of AAPL = $6000 = 60% of equity; 40% gross budget remains.
-    portfolio.process_fill(
-        FillEvent(timestamp=TS, ticker="AAPL", quantity=60, direction="BUY", fill_price=100.0)
-    )
-
-    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"MSFT": 1.0}))
-
-    msft = next(o for o in orders if o.ticker == "MSFT")
-    assert msft.quantity == round(0.4 * 10_000.0 / 100.0)
-
-
-def test_first_bar_opens_immediately_no_vol_warm_up_needed() -> None:
-    # The whole point of this portfolio: unlike VolWeightedPortfolio, it opens
-    # on the very first signal, with no return history required.
-    prices = FakePriceSource({"AAPL": 100.0})
-    portfolio = ScoreProportionalPortfolio(price_source=prices, initial_cash=10_000.0)
-
-    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0}))
-
-    assert len(orders) == 1
-    assert orders[0].direction == "BUY"
-    assert orders[0].quantity == round(1.0 * 10_000.0 / 100.0)

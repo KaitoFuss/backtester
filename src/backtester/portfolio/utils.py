@@ -180,6 +180,15 @@ def apply_fill(cash: float, positions: dict[Ticker, Position], event: FillEvent)
             entry_price=event.fill_price,
             entry_date=event.timestamp,
         )
+    elif abs(new_qty) > abs(prior_qty):
+        # Adding to a position re-bases the cost basis onto the quantity-weighted
+        # average, so anything reading entry_price off a resized position (the
+        # risk manager's stop-loss and take-profit) measures from what the
+        # position actually cost. entry_date stays at first entry so holding
+        # period still means time since the position was established.
+        added = abs(new_qty) - abs(prior_qty)
+        avg_price = (prior.entry_price * abs(prior_qty) + event.fill_price * added) / abs(new_qty)
+        positions[event.ticker] = replace(prior, quantity=new_qty, entry_price=avg_price)
     else:
         positions[event.ticker] = replace(prior, quantity=new_qty)
     return new_cash

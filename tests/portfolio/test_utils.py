@@ -200,14 +200,46 @@ def test_apply_fill_flip_direction_resets_cost_basis() -> None:
     )
 
 
-def test_apply_fill_adding_to_position_keeps_original_entry() -> None:
+def test_apply_fill_adding_to_position_averages_the_cost_basis() -> None:
     positions = {"AAPL": Position(ticker="AAPL", quantity=10, entry_price=90.0, entry_date=TS)}
+    later = datetime(2024, 3, 8)
     fill = FillEvent(
-        timestamp=TS, ticker="AAPL", quantity=5, direction="BUY", fill_price=110.0, commission=0.0
+        timestamp=later,
+        ticker="AAPL",
+        quantity=5,
+        direction="BUY",
+        fill_price=120.0,
+        commission=0.0,
+    )
+
+    apply_fill(0.0, positions, fill)
+
+    # (10 * 90 + 5 * 120) / 15, and entry_date stays at the first entry so
+    # holding period still measures from when the position was established.
+    assert positions["AAPL"] == Position(
+        ticker="AAPL", quantity=15, entry_price=100.0, entry_date=TS
+    )
+
+
+def test_apply_fill_averages_cost_basis_when_adding_to_a_short() -> None:
+    positions = {"AAPL": Position(ticker="AAPL", quantity=-10, entry_price=90.0, entry_date=TS)}
+    fill = FillEvent(
+        timestamp=TS, ticker="AAPL", quantity=10, direction="SELL", fill_price=110.0, commission=0.0
     )
 
     apply_fill(0.0, positions, fill)
 
     assert positions["AAPL"] == Position(
-        ticker="AAPL", quantity=15, entry_price=90.0, entry_date=TS
+        ticker="AAPL", quantity=-20, entry_price=100.0, entry_date=TS
     )
+
+
+def test_apply_fill_partial_reduce_keeps_the_cost_basis() -> None:
+    positions = {"AAPL": Position(ticker="AAPL", quantity=10, entry_price=90.0, entry_date=TS)}
+    fill = FillEvent(
+        timestamp=TS, ticker="AAPL", quantity=4, direction="SELL", fill_price=120.0, commission=0.0
+    )
+
+    apply_fill(0.0, positions, fill)
+
+    assert positions["AAPL"] == Position(ticker="AAPL", quantity=6, entry_price=90.0, entry_date=TS)
