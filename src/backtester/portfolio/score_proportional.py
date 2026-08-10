@@ -107,9 +107,8 @@ class ScoreProportionalPortfolio(BasePortfolio):
     def _orders_from_targets(
         self, weights: Mapping[Ticker, float], equity: float, timestamp: datetime
     ) -> list[OrderEvent]:
-        """Trade each ticker's target weight minus what it already holds. The
-        single place a target becomes an order, so a drift band (only retrade
-        once the gap exceeds some threshold) would slot in here."""
+        """Trade each ticker's target weight minus what it already holds,
+        skipping tickers whose gap sits inside ``self._drift_band``."""
         orders: list[OrderEvent] = []
         for ticker, weight in weights.items():
             price = self._price_source.get_price(ticker)
