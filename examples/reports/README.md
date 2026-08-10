@@ -6,9 +6,14 @@ buy-and-hold on the same 8-ETF universe (`SPY QQQ TLT IEF GLD DBC UUP FXE`,
 2015-01-01 to 2025-01-01, daily bars from yfinance).
 
 Both runs charge the costs their config ships with: **1.0 bp half-spread per
-fill (`cost_bps`) plus 0.5 bp commission (`commission_bps`)**, and both use a
-50 bp rebalancing no-trade band (`drift_band: 0.005`). Every number below is
-after those costs.
+fill (`cost_bps`) plus 0.5 bp commission (`commission_bps`)**. Every number
+below is after those costs.
+
+Both configs also carry `drift_band: 0.005` — a 50 bp rebalancing no-trade
+band — but only to keep the two structurally comparable. `build_portfolio`
+passes it to `ScoreProportionalPortfolio` alone, so it is live for Score
+Scaling Neutral and inert dead config for Vol Sized, whose `inverse_vol`
+model never resizes a held position and so has nothing to band.
 
 | | Config | Portfolio model | Total return | Sharpe | Max DD | Annual turnover | Breakeven |
 |---|---|---|---|---|---|---|---|
@@ -32,8 +37,8 @@ frictionless result sits *inside* the cost term.
 
 The number that actually matters is the breakeven half-spread: hold the
 shipped 0.5 bp commission fixed and sweep `cost_bps`, and Sharpe crosses zero
-at **0.31 bp** — about **0.8 bp of total cost per fill**. Under a tenth of a
-cent on a $100 ETF is the whole edge. Real ETF spreads are wider than that
+at **0.31 bp** — about **0.8 bp of total cost per fill**. Under a cent on a
+$100 ETF is the whole edge. Real ETF spreads are wider than that
 before you get to commission, borrow, or impact, so the honest reading is that
 this signal has no tradable edge at this rebalancing frequency, and the
 frictionless number was never a result — it was an artifact of not charging
@@ -44,11 +49,11 @@ any cost is charged, so there is nothing for costs to erode. It turns over ~4x
 less than the neutral book and therefore degrades ~4x more gently, which is the
 only thing the comparison demonstrates.
 
-The 50 bp drift band barely moves either run — this signal's target weights
-churn by more than 50 bp of equity most bars, so the band rarely fires. A band
-wide enough to cut this turnover materially would also filter out the daily
-signal that the strategy is built on. That trade-off is the real constraint,
-not a tuning oversight.
+The 50 bp drift band barely moves Score Scaling Neutral, the only run that
+reads it: this signal's target weights churn by more than 50 bp of equity most
+bars, so the band rarely fires. A band wide enough to cut that turnover
+materially would also filter out the daily signal the strategy is built on.
+That trade-off is the real constraint, not a tuning oversight.
 
 Score Scaling Neutral is still the more interesting of the two structurally:
 it runs dollar-neutral (long and short legs sized to net to zero) and carries
@@ -67,7 +72,8 @@ uv run scripts/run_zscore_backtest.py configs/zscore_backtest.json --cost-sweep
 
 Each run writes a numbered PDF plus a matching `_overview.png` (the report's
 first page) to `output/zscore_ma/`. The committed files here are those
-outputs with the run number stripped:
+outputs renamed — the run number dropped from the PDF, and both the run
+number and `_report` dropped from the PNG:
 
 ```
 output/zscore_ma/score_scaling_neutral_report_1.pdf          → score_scaling_neutral_report.pdf
