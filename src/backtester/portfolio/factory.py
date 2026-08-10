@@ -24,8 +24,6 @@ def build_portfolio(config: BacktestConfig, price_source: PriceSource) -> Portfo
             return ScoreProportionalPortfolio(
                 price_source=price_source,
                 initial_cash=config.initial_cash,
-                entry_threshold=config.entry_threshold,
-                exit_threshold=config.exit_threshold,
                 max_gross=config.max_gross,
                 dollar_neutral=config.dollar_neutral,
             )

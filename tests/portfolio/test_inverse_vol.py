@@ -7,8 +7,7 @@ from itertools import pairwise
 import pytest
 
 from backtester.core.events import FillEvent, SignalEvent
-from backtester.portfolio.inverse_vol import InverseVolPortfolio
-from backtester.portfolio.utils import annualized_vol
+from backtester.portfolio.inverse_vol import InverseVolPortfolio, _annualized_vol
 
 TS = datetime(2024, 1, 1)
 
@@ -37,6 +36,24 @@ def test_zero_score_without_position_yields_no_orders() -> None:
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 0.0}))
 
     assert orders == []
+
+
+def test_zero_score_with_ready_vol_still_yields_no_order() -> None:
+    prices = MutablePriceSource(AAPL=100.0)
+    portfolio = InverseVolPortfolio(price_source=prices, initial_cash=10_000.0, vol_window=2)
+
+    # Unlike the vol-not-ready case above, vol is ready here: a 0.0 score
+    # must still yield no order, but via the sign function naturally zeroing
+    # its weight rather than being gated out before reaching it.
+    filled = _warm_and_open(
+        portfolio,
+        prices,
+        paths={"AAPL": [100.0, 105.0]},
+        open_price={"AAPL": 103.0},
+        scores={"AAPL": 0.0},
+    )
+
+    assert filled == {}
 
 
 def test_zero_score_closes_existing_position() -> None:
@@ -242,7 +259,7 @@ def _sigma(price_path: list[float]) -> float:
     """Annualized vol implied by a price path, computed the same way the
     portfolio would from the log returns it observes along that path."""
     returns = [math.log(b / a) for a, b in pairwise(price_path)]
-    vol = annualized_vol(deque(returns, maxlen=len(returns)), len(returns))
+    vol = _annualized_vol(deque(returns, maxlen=len(returns)), len(returns))
     assert vol is not None
     return vol
 
@@ -294,6 +311,40 @@ def test_open_skipped_when_vol_not_yet_ready() -> None:
     orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"AAPL": 1.0}))
 
     assert orders == []
+
+
+def test_candidate_without_ready_vol_is_skipped_even_when_another_opens() -> None:
+    prices = MutablePriceSource(AAPL=100.0, MSFT=100.0)
+    portfolio = InverseVolPortfolio(price_source=prices, initial_cash=10_000.0, vol_window=2)
+
+    # MSFT never appears in a warm-up bar, so it has no return history at all
+    # (not just an incomplete one) when it first shows up on the open bar.
+    filled = _warm_and_open(
+        portfolio,
+        prices,
+        paths={"AAPL": [100.0, 105.0]},
+        open_price={"AAPL": 103.0, "MSFT": 100.0},
+        scores={"AAPL": 1.0, "MSFT": 1.0},
+    )
+
+    assert set(filled) == {"AAPL"}
+
+
+def test_qty_rounding_to_zero_shares_is_skipped() -> None:
+    prices = MutablePriceSource(AAPL=100.0)
+    portfolio = InverseVolPortfolio(price_source=prices, initial_cash=100.0, vol_window=2)
+
+    # A single candidate's full weight (1.0) at a huge price rounds its share
+    # count down to zero.
+    filled = _warm_and_open(
+        portfolio,
+        prices,
+        paths={"AAPL": [100.0, 105.0]},
+        open_price={"AAPL": 100_000_000.0},
+        scores={"AAPL": 1.0},
+    )
+
+    assert filled == {}
 
 
 def test_absent_ticker_holds_existing_position() -> None:

@@ -11,10 +11,6 @@ through each sizing model, so their reports are directly comparable:
     configs/zscore_backtest.json           inverse_vol, band trading + risk exits
     configs/zscore_rebalanced.json         score_proportional, rebalanced every bar
     configs/zscore_rebalanced_neutral.json score_proportional + dollar_neutral
-
-Note the neutral config keeps entry_threshold=2.0 for comparability, which is
-restrictive once scores are demeaned: a lone surviving name demeans to exactly
-zero, so the book needs two names crossing at once to hold anything at all.
 """
 
 from __future__ import annotations

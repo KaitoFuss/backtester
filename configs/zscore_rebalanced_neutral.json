@@ -5,8 +5,6 @@
   "portfolio": "score_proportional",
   "window": 20,
   "initial_cash": 1000000.0,
-  "entry_threshold": 2.0,
-  "exit_threshold": 0.25,
   "max_gross": 2.0,
   "dollar_neutral": true,
   "winsor_limit": 3.0,

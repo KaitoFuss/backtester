@@ -1,8 +1,8 @@
 # Architecture
 
-This is an event-driven backtesting engine for factor-model equity
-strategies: single-threaded, deterministic, and built around a small set of
-structural `Protocol`s rather than a plugin/inheritance framework.
+This is an event-driven backtesting engine for equity strategies:
+single-threaded, deterministic, and built around structural typing
+(`Protocol`) rather than a plugin/inheritance framework.
 
 ## Event loop
 
@@ -18,8 +18,8 @@ pattern-matches on event type.
 Every event rides the queue. A `MarketEvent` enqueues the `Strategy`'s single
 `SignalEvent` for the bar; that `SignalEvent` runs `Portfolio.process_signal`
 to build the bar's order batch, hands it to the optional
-`RiskManager.reconcile`, and enqueues the result; `OrderEvent`s and
-`FillEvent`s then flow through `process_order`/`process_fill`.
+`RiskManager.reconcile`, and enqueues the result; the resulting orders and
+fills then flow through `process_order`/`process_fill`.
 `Strategy.process_market` returns exactly one `SignalEvent` per bar (its
 `scores` may be empty), which guarantees the `RiskManager` gets a reconcile
 pass every bar.
@@ -30,7 +30,7 @@ force-exiting (stop-loss / take-profit / max-holding) and appends its own
 exit orders — risk beats strategy. It reads position cost basis from the
 `Portfolio` via a read-only `PortfolioView`, so it holds no state of its own.
 
-`MarketEvent`s and `FillEvent`s are also handed to an optional
+Every `MarketEvent` and `FillEvent` is also handed to an optional
 `Tracker.track_market` / `track_fill` (non-blocking, no return) — currently
 that slot is occupied by `PerformanceTracker`.
 
@@ -90,15 +90,16 @@ into that layout.
     open the same position. Held positions are never resized (flat → open →
     flat); a position closes when its score signed into the held direction
     falls below `exit_threshold`.
-  - `ScoreProportionalPortfolio` — **continuous rebalancing, sized by
+  - `ScoreProportionalPortfolio` — **continuous rebalancing, sized by raw
     conviction**. Every bar it rebuilds the whole target book
-    (`score / total abs score` into the available budget) and emits the
-    *delta* against what is held, so a weight always reflects today's score
-    rather than the score on the bar the position opened.
-    `entry_threshold`/`exit_threshold` here are a dead zone around zero on
-    `abs(score)` — a reversal is conviction the other way, so the position
-    crosses zero in a single order instead of closing. `dollar_neutral=True`
-    demeans the surviving scores so signed weights sum to zero.
+    (`score / total abs score` into the available budget, no entry/exit gate
+    — any nonzero score carries some weight) and emits the *delta* against
+    what is held, so a weight always reflects today's score rather than the
+    score on the bar the position opened. A reversal is conviction the other
+    way, so the position crosses zero in a single order instead of closing.
+    `dollar_neutral=True` demeans every scored ticker (an exact `0.0` is a
+    real reading, not a placeholder, so it takes part too) so signed weights
+    sum to zero.
   - `EqualWeightPortfolio` — deliberately the dumbest: a non-zero-scored
     ticker while flat takes an equal share of the remaining gross, then is
     never resized or closed. Exists so `BuyAndHoldStrategy` stays a genuine
