@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Literal
 
+import numpy as np
+
 from backtester.core.engine import PriceSource
 from backtester.core.events import OrderEvent, Position, SignalEvent, Ticker
 from backtester.core.trade_log import log_trade
@@ -24,17 +26,6 @@ def _annualized_vol(returns: deque[float] | None, window: int) -> float | None:
     if stdev == 0:
         return None
     return stdev * math.sqrt(TRADING_DAYS_PER_YEAR)
-
-
-def _sign(score: float) -> float:
-    """True mathematical sign, unlike ``math.copysign`` which always returns
-    +-1.0 and would otherwise force a direction onto an exact 0.0 (a real
-    reading, not a placeholder) based on nothing but its float sign bit."""
-    if score > 0:
-        return 1.0
-    if score < 0:
-        return -1.0
-    return 0.0
 
 
 def _partition_signal(
@@ -253,7 +244,10 @@ class InverseVolPortfolio(BasePortfolio):
                 )
                 continue
             logger.debug("%s  %s: annualized_vol=%.4f", event.timestamp, ticker, vol)
-            raw[ticker] = _sign(score) / vol
+            # np.sign, unlike math.copysign, returns 0.0 for 0.0 rather than
+            # forcing a direction onto an exact-zero score based on nothing
+            # but its float sign bit.
+            raw[ticker] = float(np.sign(score)) / vol
 
         total_abs_raw = sum(abs(r) for r in raw.values())
         if total_abs_raw == 0.0:
