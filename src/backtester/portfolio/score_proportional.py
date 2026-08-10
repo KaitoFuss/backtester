@@ -48,10 +48,25 @@ class ScoreProportionalPortfolio(BasePortfolio):
 
     The band applies uniformly, **including to closes**: a position whose
     target weight has fallen inside the band is held rather than trimmed, so
-    small dust positions accumulate and keep consuming gross budget via
-    ``existing_gross`` until the end-of-run liquidation clears them. That is
-    deliberate — exempting closes would let a name be closed and reopened for
-    sub-band reasons, which is exactly the churn the band exists to remove.
+    small dust positions accumulate and survive until the end-of-run
+    liquidation clears them. That is deliberate — exempting closes would let a
+    name be closed and reopened for sub-band reasons, which is exactly the
+    churn the band exists to remove.
+
+    A nonzero band therefore makes ``max_gross`` approximate rather than hard.
+    The targets already sum to the whole budget; a banded ticker keeps its
+    current weight while every unbanded one trades to its target, so realized
+    gross comes out at ``max_gross + sum(current - target)`` over the banded
+    names alone. Each of those terms is smaller than ``drift_band`` by
+    construction, so the overshoot (or undershoot) is bounded by
+    ``drift_band * n_scored`` — up to 4% of equity either side of the cap at
+    ``drift_band=0.005`` over 8 tickers.
+
+    Note that ``existing_gross`` does *not* mediate this. It reserves gross
+    only for tickers missing from ``event.scores`` altogether, and
+    ``ZScoreMovingAverageStrategy`` scores every ticker every bar, so in steady
+    state that reserve is zero and only warmup, zero-stdev or missing-bar bars
+    trigger it.
     """
 
     def __init__(

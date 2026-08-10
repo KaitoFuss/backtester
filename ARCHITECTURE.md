@@ -80,8 +80,9 @@ into that layout.
   `process_fill`. Each portfolio writes its own `process_signal`, because an
   order means something different under band trading (a one-shot open) than
   under rebalancing (a delta toward a target). `max_gross` is the leverage
-  cap throughout (gross exposure as a multiple of equity); cash is an
-  accounting balance, not a sizing constraint.
+  cap throughout (gross exposure as a multiple of equity), approximate rather
+  than hard under a drift band — see `ScoreProportionalPortfolio` below; cash
+  is an accounting balance, not a sizing constraint.
 
   - `InverseVolPortfolio` — **band trading, sized purely by risk**. Weight
     is `sign(score) / trailing σ`, normalized so the batch of new opens
@@ -103,7 +104,11 @@ into that layout.
     target: a ticker whose weight gap sits inside the band is left alone,
     which is the one lever this model has against turnover. It is a blunt
     one — a band wide enough to matter for a daily signal also filters the
-    signal it is meant to trade.
+    signal it is meant to trade. A nonzero band also softens `max_gross`:
+    targets sum to the whole budget, but a banded ticker holds its current
+    weight instead of moving to its target, so realized gross lands within
+    `drift_band × n_scored` of the cap (4% of equity at `drift_band: 0.005`
+    over 8 tickers).
   - `EqualWeightPortfolio` — deliberately the dumbest: a non-zero-scored
     ticker while flat takes an equal share of the remaining gross, then is
     never resized or closed. Exists so `BuyAndHoldStrategy` stays a genuine
