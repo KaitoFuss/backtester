@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 
 from backtester.config import BacktestConfig
+from backtester.sweep import CostPoint, breakeven_cost
 from backtester.tracker.metrics import PerformanceMetrics, TradeMetrics
 from backtester.tracker.plotting import draw_equity_curve
 
@@ -294,6 +295,45 @@ def _add_config_page(pdf: PdfPages, config: BacktestConfig) -> None:
     _save_page(pdf, fig)
 
 
+def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
+    """Sharpe against trading cost, with the breakeven half-spread marked. The
+    slope is the point: a signal whose Sharpe collapses over a fraction of a
+    basis point is inside the cost term, not above it."""
+    if not points:
+        return
+
+    fig = _new_page("Cost Sensitivity")
+    ax = fig.add_axes((0.09, 0.12, 0.85, 0.72))
+    ax.set_facecolor(_SURFACE)
+
+    costs = [point.cost_bps for point in points]
+    sharpes = [point.sharpe for point in points]
+    ax.plot(costs, sharpes, marker="o", color=_INK, linewidth=1.4, markersize=4)
+    ax.axhline(0.0, color=_MUTED, linewidth=0.8, linestyle="--")
+
+    breakeven = breakeven_cost(points)
+    if breakeven is not None:
+        ax.axvline(breakeven, color="#e34948", linewidth=1.0)
+        ax.annotate(
+            f"breakeven ≈ {breakeven:.2f} bp",
+            xy=(breakeven, 0.0),
+            xytext=(6, 10),
+            textcoords="offset points",
+            color="#e34948",
+            fontsize=9,
+        )
+
+    ax.set_xlabel("half-spread per fill (bp)", color=_MUTED, fontsize=9)
+    ax.set_ylabel("Sharpe", color=_MUTED, fontsize=9)
+    ax.tick_params(colors=_MUTED, labelsize=9, length=0)
+    ax.grid(True, color=_GRID, linewidth=0.6)
+    ax.set_axisbelow(True)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    _save_page(pdf, fig)
+
+
 def save_report(
     output_dir: Path,
     histories: Mapping[str, Sequence[tuple[datetime, float]]],
@@ -302,10 +342,13 @@ def save_report(
     monthly_tables: Mapping[str, pd.DataFrame],
     correlation: pd.DataFrame,
     config: BacktestConfig,
+    cost_sweep: Sequence[CostPoint] | None = None,
 ) -> Path:
     path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
     with PdfPages(path) as pdf:
         _add_overview_page(pdf, config.name, histories, metrics, trade_metrics, correlation)
         _add_monthly_page(pdf, monthly_tables)
+        if cost_sweep is not None:
+            _add_cost_sweep_page(pdf, cost_sweep)
         _add_config_page(pdf, config)
     return path
