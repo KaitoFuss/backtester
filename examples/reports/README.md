@@ -12,7 +12,7 @@ to end.
 
 | | Config | Portfolio model | Total return | Sharpe | Max DD | vs. Buy & Hold |
 |---|---|---|---|---|---|---|
-| [Score Scaling Neutral](score_scaling_neutral_report.pdf) | `configs/zscore_rebalanced_neutral.json` | `score_proportional`, dollar-neutral | +43.9% | 0.33 | -22.0% | +83.6% / 0.73 — but only 0.02 return correlation to it |
+| [Score Scaling Neutral](score_scaling_neutral_report.pdf) | `configs/zscore_rebalanced_neutral.json` | `score_proportional`, dollar-neutral | +75.0% | 0.38 | -23.2% | +83.6% / 0.73 — but only 0.06 return correlation to it |
 | [Vol Sized](vol_sized_report.pdf) | `configs/zscore_backtest.json` | `inverse_vol`, band trading | -4.9% | -0.03 | -37.1% | +83.6% / 0.73 |
 
 Score Scaling Neutral is the more interesting of the two: it runs
