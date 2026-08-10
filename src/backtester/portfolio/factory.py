@@ -26,6 +26,7 @@ def build_portfolio(config: BacktestConfig, price_source: PriceSource) -> Portfo
                 initial_cash=config.initial_cash,
                 max_gross=config.max_gross,
                 dollar_neutral=config.dollar_neutral,
+                drift_band=config.drift_band,
             )
         case "equal_weight":
             return EqualWeightPortfolio(

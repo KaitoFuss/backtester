@@ -255,3 +255,54 @@ def test_closing_position_clears_it() -> None:
     )
 
     assert portfolio.get_position("AAPL") is None
+
+
+def test_sub_band_gap_emits_no_order() -> None:
+    portfolio = ScoreProportionalPortfolio(
+        price_source=FakePriceSource({"SPY": 100.0}),
+        initial_cash=100_000.0,
+        max_gross=1.0,
+        drift_band=0.05,
+    )
+    # Open a 1000-share position: weight 1.0 of 100_000 equity at 100.0.
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="SPY", quantity=1000, direction="BUY", fill_price=100.0)
+    )
+
+    # Target weight is still 1.0 -> gap 0.0, well inside the 0.05 band.
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"SPY": 1.0}))
+
+    assert orders == []
+
+
+def test_over_band_gap_emits_the_full_delta() -> None:
+    portfolio = ScoreProportionalPortfolio(
+        price_source=FakePriceSource({"SPY": 100.0, "QQQ": 100.0}),
+        initial_cash=100_000.0,
+        max_gross=1.0,
+        drift_band=0.05,
+    )
+    portfolio.process_fill(
+        FillEvent(timestamp=TS, ticker="SPY", quantity=1000, direction="BUY", fill_price=100.0)
+    )
+
+    # Two equally scored names -> target weight 0.5 each; SPY sits at 1.0.
+    # Gap 0.5 >> 0.05, so SPY trades the full delta back to 500 shares.
+    orders = portfolio.process_signal(SignalEvent(timestamp=TS, scores={"SPY": 1.0, "QQQ": 1.0}))
+
+    spy = next(order for order in orders if order.ticker == "SPY")
+    assert spy.direction == "SELL"
+    assert spy.quantity == 500
+
+
+def test_zero_band_reproduces_unbanded_behaviour() -> None:
+    """drift_band=0.0 must be a no-op, so every existing test stays valid."""
+    prices = {"SPY": 100.0, "QQQ": 100.0}
+    banded = ScoreProportionalPortfolio(
+        price_source=FakePriceSource(prices), initial_cash=100_000.0, drift_band=0.0
+    )
+    plain = ScoreProportionalPortfolio(price_source=FakePriceSource(prices), initial_cash=100_000.0)
+
+    signal = SignalEvent(timestamp=TS, scores={"SPY": 1.0, "QQQ": 0.5})
+
+    assert list(banded.process_signal(signal)) == list(plain.process_signal(signal))

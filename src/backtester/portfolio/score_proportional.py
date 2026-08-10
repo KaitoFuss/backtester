@@ -39,9 +39,19 @@ class ScoreProportionalPortfolio(BasePortfolio):
     anywhere else. When only one ticker is scored it demeans to exactly zero
     against itself, so no position is taken.
 
-    Turnover is deliberately uncontrolled — there is no drift band yet, so any
-    change in score retrades. Until the execution layer models slippage and
-    commission, that churn is free here and would not be in reality.
+    ``drift_band`` is the no-trade region: a ticker whose target weight sits
+    within ``drift_band`` of what is already held is left alone, so the
+    position drifts with price rather than being retraded for a fraction of a
+    basis point. Without it this portfolio retrades every scored name every
+    bar, because a score always moves a little. Wider band, lower cost, staler
+    book.
+
+    The band applies uniformly, **including to closes**: a position whose
+    target weight has fallen inside the band is held rather than trimmed, so
+    small dust positions accumulate and keep consuming gross budget via
+    ``existing_gross`` until the end-of-run liquidation clears them. That is
+    deliberate — exempting closes would let a name be closed and reopened for
+    sub-band reasons, which is exactly the churn the band exists to remove.
     """
 
     def __init__(
@@ -50,9 +60,11 @@ class ScoreProportionalPortfolio(BasePortfolio):
         initial_cash: float = 100_000.0,
         max_gross: float = 1.0,
         dollar_neutral: bool = False,
+        drift_band: float = 0.0,
     ) -> None:
         super().__init__(price_source=price_source, initial_cash=initial_cash, max_gross=max_gross)
         self._dollar_neutral = dollar_neutral
+        self._drift_band = drift_band
 
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
         equity = self.mark_to_market()
@@ -105,6 +117,18 @@ class ScoreProportionalPortfolio(BasePortfolio):
                 continue
             position = self._positions.get(ticker)
             current_qty = position.quantity if position else 0
+
+            current_weight = current_qty * price / equity
+            if abs(weight - current_weight) < self._drift_band:
+                logger.debug(
+                    "%s  %s: weight gap %.5f inside drift_band=%.5f, holding",
+                    timestamp,
+                    ticker,
+                    abs(weight - current_weight),
+                    self._drift_band,
+                )
+                continue
+
             delta = round(weight * equity / price) - current_qty
             if delta == 0:
                 continue
