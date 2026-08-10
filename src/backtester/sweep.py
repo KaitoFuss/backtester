@@ -4,41 +4,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
-from itertools import pairwise
+from dataclasses import replace
 
 from backtester.config import BacktestConfig
+from backtester.cost_curve import CostPoint, breakeven_cost
 from backtester.runner import run_strategy_and_benchmark
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_LADDER: tuple[float, ...] = (0.0, 0.25, 0.5, 1.0, 2.0, 5.0)
-
-
-@dataclass(frozen=True)
-class CostPoint:
-    """One rung of the ladder: the strategy leg's result at ``cost_bps``."""
-
-    cost_bps: float
-    total_return: float
-    sharpe: float
-    max_drawdown: float
-    annual_turnover: float
-
-
-def breakeven_cost(points: Sequence[CostPoint]) -> float | None:
-    """The half-spread at which Sharpe first crosses zero, linearly interpolated
-    between the two ladder rungs that straddle it.
-
-    ``None`` when Sharpe never crosses within the ladder — either because the
-    strategy survives every cost tested, or because it was already losing at
-    zero cost, in which case there is no breakeven to report rather than one
-    to extrapolate."""
-    for low, high in pairwise(points):
-        if low.sharpe >= 0.0 >= high.sharpe and low.sharpe != high.sharpe:
-            span = high.cost_bps - low.cost_bps
-            return low.cost_bps + span * low.sharpe / (low.sharpe - high.sharpe)
-    return None
 
 
 def run_cost_sweep(

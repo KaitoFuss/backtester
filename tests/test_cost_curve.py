@@ -1,4 +1,4 @@
-from backtester.sweep import CostPoint, breakeven_cost
+from backtester.cost_curve import CostPoint, breakeven_cost
 
 
 def _point(cost: float, sharpe: float) -> CostPoint:

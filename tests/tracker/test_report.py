@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from backtester.config import BacktestConfig
-from backtester.sweep import CostPoint
+from backtester.cost_curve import CostPoint
 from backtester.tracker.metrics import (
     PerformanceMetrics,
     TradeMetrics,

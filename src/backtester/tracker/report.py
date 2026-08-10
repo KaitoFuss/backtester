@@ -15,7 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 
 from backtester.config import BacktestConfig
-from backtester.sweep import CostPoint, breakeven_cost
+from backtester.cost_curve import CostPoint, breakeven_cost
 from backtester.tracker.metrics import PerformanceMetrics, TradeMetrics
 from backtester.tracker.plotting import draw_equity_curve
 
