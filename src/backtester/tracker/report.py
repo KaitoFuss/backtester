@@ -27,8 +27,9 @@ _MUTED = "#898781"
 _GRID = "#e1e0d9"
 _GOOD_TINT = "#e3f5e3"
 _CRITICAL_TINT = "#fbe3e3"
+_NEGATIVE = "#e34948"
 
-_DIVERGING = LinearSegmentedColormap.from_list("diverging", ["#e34948", "#f0efec", "#2a78d6"])
+_DIVERGING = LinearSegmentedColormap.from_list("diverging", [_NEGATIVE, "#f0efec", "#2a78d6"])
 
 _SUMMARY_COLUMNS = ("Annual Return", "Max DD", "Sharpe")
 _SUMMARY_FORMATS = {"Annual Return": "{:.1%}", "Max DD": "{:.1%}", "Sharpe": "{:.2f}"}
@@ -318,13 +319,13 @@ def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
 
     breakeven = breakeven_cost(points)
     if breakeven is not None:
-        ax.axvline(breakeven, color="#e34948", linewidth=1.0)
+        ax.axvline(breakeven, color=_NEGATIVE, linewidth=1.0)
         ax.annotate(
             f"breakeven ≈ {breakeven:.2f} bp",
             xy=(breakeven, 0.0),
             xytext=(6, 10),
             textcoords="offset points",
-            color="#e34948",
+            color=_NEGATIVE,
             fontsize=9,
         )
 

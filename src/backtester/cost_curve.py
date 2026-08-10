@@ -32,8 +32,12 @@ def breakeven_cost(points: Sequence[CostPoint]) -> float | None:
     ``None`` when Sharpe never crosses within the ladder — either because the
     strategy survives every cost tested, or because it was already losing at
     zero cost, in which case there is no breakeven to report rather than one
-    to extrapolate."""
-    for low, high in pairwise(points):
+    to extrapolate.
+
+    Points are sorted by ``cost_bps`` before pairing, so a ladder handed over
+    in any order (``--ladder 5 1 0``) still finds the crossing instead of
+    interpolating across a negative span."""
+    for low, high in pairwise(sorted(points, key=lambda point: point.cost_bps)):
         if low.sharpe >= 0.0 >= high.sharpe and low.sharpe != high.sharpe:
             span = high.cost_bps - low.cost_bps
             return low.cost_bps + span * low.sharpe / (low.sharpe - high.sharpe)

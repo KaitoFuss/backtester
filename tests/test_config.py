@@ -96,7 +96,7 @@ def test_backtest_config_overrides_sizing_defaults(tmp_path: Path) -> None:
     assert config.winsor_limit == 2.5
 
 
-def test_cost_and_drift_fields_default_to_zero(tmp_path):
+def test_cost_and_drift_fields_default_to_zero(tmp_path: Path) -> None:
     path = tmp_path / "c.json"
     path.write_text('{"name": "T", "data": "data/raw"}')
 
@@ -107,7 +107,7 @@ def test_cost_and_drift_fields_default_to_zero(tmp_path):
     assert config.drift_band == 0.0
 
 
-def test_cost_and_drift_fields_read_from_json(tmp_path):
+def test_cost_and_drift_fields_read_from_json(tmp_path: Path) -> None:
     path = tmp_path / "c.json"
     path.write_text(
         '{"name": "T", "data": "data/raw", "cost_bps": 1.0, '
