@@ -162,6 +162,7 @@ def test_cost_sweep_page_adds_a_page_to_the_pdf(tmp_path: Path) -> None:
     points = [
         CostPoint(
             cost_bps=0.0,
+            commission_bps=0.5,
             total_return=0.75,
             sharpe=0.38,
             max_drawdown=-0.23,
@@ -169,6 +170,7 @@ def test_cost_sweep_page_adds_a_page_to_the_pdf(tmp_path: Path) -> None:
         ),
         CostPoint(
             cost_bps=1.0,
+            commission_bps=0.5,
             total_return=-0.12,
             sharpe=-0.09,
             max_drawdown=-0.32,
@@ -208,6 +210,7 @@ def test_cost_sweep_page_handles_a_ladder_that_never_crosses_zero(tmp_path: Path
     points = [
         CostPoint(
             cost_bps=0.0,
+            commission_bps=0.5,
             total_return=0.75,
             sharpe=1.20,
             max_drawdown=-0.23,
@@ -215,6 +218,7 @@ def test_cost_sweep_page_handles_a_ladder_that_never_crosses_zero(tmp_path: Path
         ),
         CostPoint(
             cost_bps=1.0,
+            commission_bps=0.5,
             total_return=0.60,
             sharpe=0.95,
             max_drawdown=-0.25,

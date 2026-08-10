@@ -304,11 +304,25 @@ def _add_config_page(pdf: PdfPages, config: BacktestConfig) -> None:
 def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
     """Sharpe against trading cost, with the breakeven half-spread marked. The
     slope is the point: a signal whose Sharpe collapses over a fraction of a
-    basis point is inside the cost term, not above it."""
+    basis point is inside the cost term, not above it.
+
+    Only the half-spread is swept; the commission is fixed. This page travels on
+    its own, so it names the commission in the subtitle, on the axis and in the
+    breakeven annotation rather than relying on a reader who has the README."""
     if not points:
         return
 
+    commission = points[0].commission_bps
     fig = _new_page("Cost Sensitivity")
+    fig.text(
+        0.04,
+        0.905,
+        f"Sharpe vs half-spread per fill. Commission held fixed at {commission:.2f} bp "
+        "per fill on every rung, so the whole curve already pays it.",
+        color=_MUTED,
+        fontsize=9.5,
+        ha="left",
+    )
     ax = fig.add_axes((0.09, 0.12, 0.85, 0.72))
     ax.set_facecolor(_SURFACE)
 
@@ -321,7 +335,8 @@ def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
     if breakeven is not None:
         ax.axvline(breakeven, color=_NEGATIVE, linewidth=1.0)
         ax.annotate(
-            f"breakeven ≈ {breakeven:.2f} bp",
+            f"breakeven ≈ {breakeven:.2f} bp half-spread\n"
+            f"(+ {commission:.2f} bp commission held fixed)",
             xy=(breakeven, 0.0),
             xytext=(6, 10),
             textcoords="offset points",
@@ -329,7 +344,11 @@ def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
             fontsize=9,
         )
 
-    ax.set_xlabel("half-spread per fill (bp)", color=_MUTED, fontsize=9)
+    ax.set_xlabel(
+        f"half-spread per fill (bp), on top of a fixed {commission:.2f} bp commission",
+        color=_MUTED,
+        fontsize=9,
+    )
     ax.set_ylabel("Sharpe", color=_MUTED, fontsize=9)
     ax.tick_params(colors=_MUTED, labelsize=9, length=0)
     ax.grid(True, color=_GRID, linewidth=0.6)

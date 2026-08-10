@@ -4,6 +4,7 @@ from backtester.cost_curve import CostPoint, breakeven_cost
 def _point(cost: float, sharpe: float) -> CostPoint:
     return CostPoint(
         cost_bps=cost,
+        commission_bps=0.5,
         total_return=0.0,
         sharpe=sharpe,
         max_drawdown=0.0,

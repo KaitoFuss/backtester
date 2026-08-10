@@ -16,9 +16,14 @@ from itertools import pairwise
 
 @dataclass(frozen=True)
 class CostPoint:
-    """One rung of the ladder: the strategy leg's result at ``cost_bps``."""
+    """One rung of the ladder: the strategy leg's result at ``cost_bps``.
+
+    ``commission_bps`` is *not* swept — it is the config's fixed commission,
+    carried on every point so anything rendering the curve can say what the
+    half-spread was charged on top of."""
 
     cost_bps: float
+    commission_bps: float
     total_return: float
     sharpe: float
     max_drawdown: float
@@ -28,6 +33,10 @@ class CostPoint:
 def breakeven_cost(points: Sequence[CostPoint]) -> float | None:
     """The half-spread at which Sharpe first crosses zero, linearly interpolated
     between the two ladder rungs that straddle it.
+
+    This is the swept half-spread only. The config's commission is held fixed
+    across the ladder and is *not* included, so the total breakeven cost per
+    fill is this figure plus ``commission_bps``.
 
     ``None`` when Sharpe never crosses within the ladder — either because the
     strategy survives every cost tested, or because it was already losing at
