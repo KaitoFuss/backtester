@@ -8,5 +8,8 @@
   "max_gross": 1.0,
   "dollar_neutral": false,
   "winsor_limit": 3.0,
+  "cost_bps": 1.0,
+  "commission_bps": 0.5,
+  "drift_band": 0.005,
   "output_dir": "output"
 }

@@ -25,6 +25,7 @@ from backtester.runner import (
     verbosity_to_level,
     warn_if_risk_exits_fight_rebalancing,
 )
+from backtester.sweep import run_cost_sweep
 from backtester.tracker.metrics import monthly_returns_table, strategy_correlation_matrix
 from backtester.tracker.report import save_report
 
@@ -41,6 +42,11 @@ def main() -> None:
         default=0,
         help="-v for the trade blotter (INFO), -vv for the full numeric trail (DEBUG)",
     )
+    parser.add_argument(
+        "--cost-sweep",
+        action="store_true",
+        help="also run the cost ladder and add a sensitivity page to the report",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -54,6 +60,8 @@ def main() -> None:
     trackers = run_strategy_and_benchmark(config)
     histories = {label: tracker.mark_to_market_history for label, tracker in trackers.items()}
 
+    sweep = run_cost_sweep(config) if args.cost_sweep else None
+
     report_path = save_report(
         output_dir=Path(config.output_dir) / "zscore_ma",
         histories=histories,
@@ -64,6 +72,7 @@ def main() -> None:
         },
         correlation=strategy_correlation_matrix(histories),
         config=config,
+        cost_sweep=sweep,
     )
     # print, not logger.info: the default level is WARNING, so a log call here
     # would make the report path invisible — and the user always needs it.

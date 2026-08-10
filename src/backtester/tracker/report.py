@@ -125,6 +125,7 @@ def _add_overview_page(
     metrics: Mapping[str, PerformanceMetrics],
     trade_metrics: Mapping[str, TradeMetrics],
     correlation: pd.DataFrame,
+    png_path: Path | None = None,
 ) -> None:
     labels = list(metrics)
     fig = _new_page(f"Performance Overview - {name}")
@@ -169,6 +170,10 @@ def _add_overview_page(
             annotation_fontsize=9,
         )
         ax_correlation.set_title("Return Correlation", color=_INK, fontsize=11, loc="left", pad=8)
+
+    # The same figure doubles as the repo's hero image, so a clone can reproduce it.
+    if png_path is not None:
+        fig.savefig(png_path, facecolor=_SURFACE, dpi=150, bbox_inches="tight")
     _save_page(pdf, fig)
 
 
@@ -346,7 +351,15 @@ def save_report(
 ) -> Path:
     path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
     with PdfPages(path) as pdf:
-        _add_overview_page(pdf, config.name, histories, metrics, trade_metrics, correlation)
+        _add_overview_page(
+            pdf,
+            config.name,
+            histories,
+            metrics,
+            trade_metrics,
+            correlation,
+            png_path=path.with_name(f"{path.stem}_overview.png"),
+        )
         _add_monthly_page(pdf, monthly_tables)
         if cost_sweep is not None:
             _add_cost_sweep_page(pdf, cost_sweep)

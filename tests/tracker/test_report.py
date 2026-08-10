@@ -59,6 +59,24 @@ def test_save_report_writes_report_1_pdf_on_first_run(tmp_path: Path) -> None:
     assert path.stat().st_size > 0
 
 
+def test_overview_png_is_written_next_to_the_pdf(tmp_path: Path) -> None:
+    metrics, trade_metrics, histories, config = _sample_inputs()
+
+    path = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
+    )
+
+    png = path.with_name(f"{path.stem}_overview.png")
+    assert png.is_file()
+    assert png.stat().st_size > 0
+
+
 def test_save_report_increments_and_never_overwrites(tmp_path: Path) -> None:
     metrics, trade_metrics, histories, config = _sample_inputs()
     monthly_tables = {label: monthly_returns_table(h) for label, h in histories.items()}
