@@ -54,7 +54,7 @@ _TRADE_ROWS: list[tuple[str, str, str, bool | None]] = [
     ("Payoff factor", "payoff_factor", "{:.2f}", True),
     ("CPC index", "cpc_index", "{:.2f}", True),
     ("Time in market", "time_in_market", "{:.2%}", None),
-    ("Turnover", "turnover", "{:.2f}", None),
+    ("Annual turnover", "annual_turnover", "{:.1f}x", None),
 ]
 
 

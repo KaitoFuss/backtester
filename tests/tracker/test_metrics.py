@@ -176,8 +176,11 @@ def test_time_in_market_and_turnover_track_open_positions_across_bars() -> None:
 
     metrics = tracker.trade_metrics()
 
+    expected_years = (_ts(2) - _ts(0)).days / 365.25
     assert metrics.time_in_market == 1 / 3
-    assert metrics.turnover == (10 * 100.0 + 10 * 110.0) / 1_000.0
+    assert metrics.annual_turnover == pytest.approx(
+        (10 * 100.0 + 10 * 110.0) / 1_000.0 / expected_years
+    )
 
 
 def test_track_market_skips_bars_with_no_prices() -> None:
@@ -379,3 +382,42 @@ def test_strategy_correlation_matrix_is_negative_for_inverse_series() -> None:
     )
 
     assert cast(float, correlation.loc["A", "B"]) < 0
+
+
+def _tracker_spanning(years: float, traded_notional: float, equity: float) -> PerformanceTracker:
+    """Equity flat at `equity` over `years`, with one round trip of
+    `traded_notional` total (half on the buy, half on the sell)."""
+    days = round(years * 365.25)
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([equity, equity]))
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars=LIVE_BARS))
+    tracker.track_market(MarketEvent(timestamp=_ts(days), bars=LIVE_BARS))
+
+    half = traded_notional / 2
+    for direction in cast(list[Literal["BUY", "SELL"]], ["BUY", "SELL"]):
+        tracker.track_fill(
+            FillEvent(
+                timestamp=_ts(0),
+                ticker="AAPL",
+                quantity=100,
+                direction=direction,
+                fill_price=half / 100,
+            )
+        )
+    return tracker
+
+
+def test_turnover_is_annualized() -> None:
+    """Same traded notional over twice the span must report half the turnover."""
+    one_year = _tracker_spanning(years=1, traded_notional=1_000_000.0, equity=100_000.0)
+    two_years = _tracker_spanning(years=2, traded_notional=1_000_000.0, equity=100_000.0)
+
+    assert one_year.trade_metrics().annual_turnover == pytest.approx(10.0, rel=0.01)
+    assert two_years.trade_metrics().annual_turnover == pytest.approx(5.0, rel=0.01)
+
+
+def test_turnover_is_zero_without_a_measurable_span() -> None:
+    """A single observation gives no elapsed time to annualize over."""
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([100_000.0]))
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars=LIVE_BARS))
+
+    assert tracker.trade_metrics().annual_turnover == 0.0

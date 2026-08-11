@@ -39,11 +39,7 @@ def run_cost_sweep(
                 total_return=metrics.total_return,
                 sharpe=metrics.sharpe,
                 max_drawdown=metrics.max_drawdown,
-                # NOTE: this is whole-period turnover, not annualized, until a
-                # follow-up PR annualizes and renames trade_metrics().turnover.
-                # The field name here is already correct; only this
-                # assignment changes then.
-                annual_turnover=tracker.trade_metrics().turnover,
+                annual_turnover=tracker.trade_metrics().annual_turnover,
             )
         )
     return points

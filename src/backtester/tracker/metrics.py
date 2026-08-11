@@ -45,7 +45,9 @@ class TradeMetrics:
     payoff_factor: float
     cpc_index: float
     time_in_market: float
-    turnover: float
+    annual_turnover: float
+    """One-way traded notional per year, as a multiple of average equity. Each
+    fill counts once, so a full round trip of the whole book is 2.0."""
 
 
 @dataclass(frozen=True)
@@ -269,7 +271,11 @@ class PerformanceTracker:
 
         equity = [value for _, value in self._mark_to_market_history]
         avg_equity = statistics.mean(equity) if equity else 0.0
-        turnover = self._traded_notional / avg_equity if avg_equity else 0.0
+        timestamps = [timestamp for timestamp, _ in self._mark_to_market_history]
+        years = (timestamps[-1] - timestamps[0]).days / 365.25 if len(timestamps) > 1 else 0.0
+        annual_turnover = (
+            self._traded_notional / avg_equity / years if avg_equity and years > 0 else 0.0
+        )
 
         return TradeMetrics(
             num_trades=len(self._trades),
@@ -280,7 +286,7 @@ class PerformanceTracker:
             payoff_factor=payoff_factor,
             cpc_index=cpc_index,
             time_in_market=time_in_market,
-            turnover=turnover,
+            annual_turnover=annual_turnover,
         )
 
 
