@@ -40,7 +40,7 @@ def run_backtest(
 ) -> PerformanceTracker:
     market_data = FrameMarketData(Path(config.data), tickers=config.tickers)
     portfolio = portfolio_factory(market_data)
-    tracker = PerformanceTracker(portfolio=portfolio)
+    tracker = PerformanceTracker(portfolio=portfolio, risk_free_rate=config.risk_free_rate)
 
     engine = Engine(
         data_handler=market_data,
