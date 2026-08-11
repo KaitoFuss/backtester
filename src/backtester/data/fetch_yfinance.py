@@ -44,7 +44,7 @@ def fetch_to_parquet(
             if close is None or pd.isna(close):
                 continue
             record: dict[str, object] = {
-                "date": pd.Timestamp(cast(str, timestamp)),
+                "date": cast(pd.Timestamp, timestamp),
                 "ticker": ticker,
             }
             for field, column in _FIELDS:
