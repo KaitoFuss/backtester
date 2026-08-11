@@ -1,6 +1,5 @@
 import logging
 import math
-import statistics
 from collections import deque
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -12,6 +11,7 @@ from backtester.core.engine import PriceSource
 from backtester.core.events import OrderEvent, Position, SignalEvent, Ticker
 from backtester.core.trade_log import log_trade
 from backtester.portfolio.base import BasePortfolio, existing_gross
+from backtester.stats import mean_and_stdev
 from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ def _annualized_vol(returns: deque[float] | None, window: int) -> float | None:
     window is full or when the sample has no dispersion."""
     if returns is None or len(returns) < window:
         return None
-    stdev = statistics.stdev(returns)
+    _, stdev = mean_and_stdev(returns)
     if stdev == 0:
         return None
     return stdev * math.sqrt(TRADING_DAYS_PER_YEAR)
