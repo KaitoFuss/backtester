@@ -1,5 +1,4 @@
 import logging
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -57,7 +56,5 @@ def fetch_to_parquet(
     frame = frame.sort_values(["date", "ticker"]).reset_index(drop=True)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    if out_path.is_dir():
-        shutil.rmtree(out_path)
     frame.to_parquet(out_path, index=False)
     logger.info("Wrote %d rows for %d ticker(s) to %s", len(frame), len(tickers), out_path)

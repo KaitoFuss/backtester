@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import cast
 
 import pandas as pd
+import pytest
 
 from backtester.data.fetch_yfinance import fetch_to_parquet
 
@@ -93,6 +94,23 @@ def test_overwrites_a_stale_file(tmp_path: Path) -> None:
     assert set(pd.read_parquet(out)["ticker"]) == {"AAPL", "MSFT"}
 
 
+def test_directory_target_is_refused_not_destroyed(tmp_path: Path) -> None:
+    """out_path must be a file path (e.g. data/raw.parquet). If it points at a
+    directory, fetch_to_parquet must refuse rather than delete the directory —
+    a data-fetching utility must never recursively remove a directory a caller
+    pointed it at, even one that looks stale."""
+    target = tmp_path / "raw.parquet"
+    target.mkdir()
+    sentinel = target / "keep-me.parquet"
+    sentinel.write_bytes(b"precious data")
+
+    with pytest.raises(IsADirectoryError, match="Is a directory"):
+        fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-05", target, downloader=_fake_downloader)
+
+    assert sentinel.exists()
+    assert sentinel.read_bytes() == b"precious data"
+
+
 def test_downloader_receives_requested_range(tmp_path: Path) -> None:
     seen: dict[str, object] = {}
 
@@ -101,7 +119,9 @@ def test_downloader_receives_requested_range(tmp_path: Path) -> None:
         seen["kwargs"] = kwargs
         return _fake_downloader()
 
-    fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-05", tmp_path, downloader=recording_downloader)
+    out = tmp_path / "raw.parquet"
+
+    fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-05", out, downloader=recording_downloader)
 
     assert seen["args"] == (TICKERS,)
     assert seen["kwargs"] == {
