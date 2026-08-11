@@ -1,10 +1,12 @@
 """The cost-sensitivity curve: one rung per cost level, and where Sharpe dies.
 
-A leaf module on purpose. Both the sweep runner (which needs the whole backtest
-stack to *produce* these points) and the PDF renderer (which needs none of it to
-*draw* them) depend on this, so it imports nothing from the package: keeping the
-shape and the arithmetic here is what stops ``report -> sweep -> runner`` from
-ever closing into a cycle.
+``CostPoint`` is a metrics dataclass in the same spirit as
+``PerformanceMetrics``/``TradeMetrics`` in ``tracker/metrics.py`` — it lives
+here rather than in ``sweep.py`` so that ``report.py`` can draw the curve
+without importing the sweep runner, which pulls in the whole backtest stack
+(engine, execution, portfolio, strategy) to *produce* these points. This
+module imports nothing from the package, so ``report -> sweep -> runner``
+never closes into a cycle.
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ def breakeven_cost(points: Sequence[CostPoint]) -> float | None:
     to extrapolate.
 
     Points are sorted by ``cost_bps`` before pairing, so a ladder handed over
-    in any order (``--ladder 5 1 0``) still finds the crossing instead of
+    in any order (e.g. ``[5, 1, 0]``) still finds the crossing instead of
     interpolating across a negative span."""
     for low, high in pairwise(sorted(points, key=lambda point: point.cost_bps)):
         if low.sharpe >= 0.0 >= high.sharpe and low.sharpe != high.sharpe:

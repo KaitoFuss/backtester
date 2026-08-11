@@ -15,7 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 
 from backtester.config import BacktestConfig
-from backtester.cost_curve import CostPoint, breakeven_cost
+from backtester.tracker.cost_curve import CostPoint, breakeven_cost
 from backtester.tracker.metrics import PerformanceMetrics, TradeMetrics
 from backtester.tracker.plotting import draw_equity_curve
 
@@ -366,8 +366,9 @@ def save_report(
     trade_metrics: Mapping[str, TradeMetrics],
     monthly_tables: Mapping[str, pd.DataFrame],
     correlation: pd.DataFrame,
-    config: BacktestConfig,
+    *,
     cost_sweep: Sequence[CostPoint] | None = None,
+    config: BacktestConfig,
 ) -> Path:
     path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
     with PdfPages(path) as pdf:

@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from backtester.config import BacktestConfig
-from backtester.cost_curve import CostPoint, breakeven_cost
 from backtester.runner import run_strategy_and_benchmark
+from backtester.tracker.cost_curve import CostPoint
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ DEFAULT_LADDER: tuple[float, ...] = (0.0, 0.25, 0.5, 1.0, 2.0, 5.0)
 
 
 def run_cost_sweep(
-    config: BacktestConfig, ladder: Sequence[float] = DEFAULT_LADDER
+    ladder: Sequence[float] = DEFAULT_LADDER, *, config: BacktestConfig
 ) -> list[CostPoint]:
     """Re-run ``config`` at each half-spread in ``ladder``, holding everything
     else fixed — **including ``config.commission_bps``**, which is charged on
@@ -47,29 +47,3 @@ def run_cost_sweep(
             )
         )
     return points
-
-
-def format_sweep(points: Sequence[CostPoint]) -> str:
-    """The ladder as a table. The swept column is the half-spread alone, so the
-    commission is named above the table and again beside the breakeven — the
-    figure is meaningless without it."""
-    commission = points[0].commission_bps if points else 0.0
-    lines = [
-        f"Commission fixed at {commission:.2f} bp per fill; "
-        "the ladder sweeps the half-spread on top of it.",
-        f"{'half-spread(bps)':>17}{'TotRet':>10}{'Sharpe':>9}{'MaxDD':>9}{'Turnover':>11}",
-    ]
-    for point in points:
-        lines.append(
-            f"{point.cost_bps:>17.2f}{point.total_return:>10.1%}{point.sharpe:>9.2f}"
-            f"{point.max_drawdown:>9.1%}{point.annual_turnover:>10.0f}x"
-        )
-    breakeven = breakeven_cost(points)
-    lines.append("")
-    lines.append(
-        f"Breakeven (Sharpe = 0): ~{breakeven:.2f} bp half-spread, "
-        f"on top of the {commission:.2f} bp commission"
-        if breakeven is not None
-        else "Breakeven (Sharpe = 0): none within the tested ladder"
-    )
-    return "\n".join(lines)

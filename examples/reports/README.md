@@ -22,8 +22,8 @@ model never resizes a held position and so has nothing to band.
 | Buy & Hold (both reports) | — | `equal_weight` | +83.6% | 0.73 | -18.4% | ~0.2x | — |
 
 Turnover is gross traded notional as a multiple of equity, divided by the
-10-year window. The reports and `scripts/cost_sweep.py` print the raw
-whole-period figure instead (6,885x and 1,632x).
+10-year window. The reports themselves show the raw whole-period figure
+instead (6,885x and 1,632x).
 
 ## What the cost curve shows
 
@@ -84,12 +84,7 @@ output/zscore_ma/vol_sized_report_1_overview.png             → vol_sized_overv
 
 `--cost-sweep` re-runs the whole backtest once per rung of the cost ladder and
 appends the Sharpe-vs-cost page to the PDF, so it takes several times longer
-than a plain run. Drop it for a fast single run. For just the table and the
-breakeven figure, without a report:
-
-```bash
-uv run scripts/cost_sweep.py configs/zscore_rebalanced_neutral.json
-```
+than a plain run. Drop it for a fast single run without a cost curve.
 
 Numbers will differ slightly from the committed reports if yfinance's
 historical data has since been revised.

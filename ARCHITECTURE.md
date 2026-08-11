@@ -146,10 +146,11 @@ into that layout.
   PDF, which is where the README's hero image comes from.
 
 `runner.py` owns the wiring end to end, so the CLI
-(`scripts/run_zscore_backtest.py`) and the cost sweep (`sweep.py`,
-`scripts/cost_sweep.py`) build an identical engine — the sweep re-runs the
-same config once per rung of a cost ladder and interpolates the half-spread
-at which Sharpe crosses zero.
+(`scripts/run_zscore_backtest.py`) and the cost sweep (`sweep.py`) build an
+identical engine — the sweep re-runs the same config once per rung of a cost
+ladder and interpolates the half-spread at which Sharpe crosses zero. The
+sweep is opt-in via `--cost-sweep`, which folds it into the report as a
+Sharpe-vs-cost page; there is no separate CLI for it.
 
 ## Logging conventions
 

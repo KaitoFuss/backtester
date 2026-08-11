@@ -5,48 +5,8 @@ import pytest
 
 from backtester import sweep
 from backtester.config import BacktestConfig
-from backtester.cost_curve import CostPoint
-from backtester.sweep import format_sweep, run_cost_sweep
+from backtester.sweep import run_cost_sweep
 from backtester.tracker.metrics import PerformanceMetrics, TradeMetrics
-
-
-def _point(cost: float, total_return: float, sharpe: float) -> CostPoint:
-    return CostPoint(
-        cost_bps=cost,
-        commission_bps=0.5,
-        total_return=total_return,
-        sharpe=sharpe,
-        max_drawdown=-0.409,
-        annual_turnover=688.0,
-    )
-
-
-def test_format_sweep_renders_the_table_the_readme_quotes() -> None:
-    """A golden string: this is a nested f-string of hand-counted column widths
-    feeding a published table, so a format typo would otherwise ship silently."""
-    points = [_point(0.0, 0.749, 0.38), _point(1.0, -0.376, -0.31)]
-
-    assert format_sweep(points) == (
-        "Commission fixed at 0.50 bp per fill; the ladder sweeps the half-spread on top of it.\n"
-        " half-spread(bps)    TotRet   Sharpe    MaxDD   Turnover\n"
-        "             0.00     74.9%     0.38   -40.9%       688x\n"
-        "             1.00    -37.6%    -0.31   -40.9%       688x\n"
-        "\n"
-        "Breakeven (Sharpe = 0): ~0.55 bp half-spread, on top of the 0.50 bp commission"
-    )
-
-
-def test_format_sweep_says_so_when_the_ladder_never_crosses_zero() -> None:
-    points = [_point(0.0, 0.749, 1.20), _point(1.0, 0.600, 0.95)]
-
-    assert format_sweep(points) == (
-        "Commission fixed at 0.50 bp per fill; the ladder sweeps the half-spread on top of it.\n"
-        " half-spread(bps)    TotRet   Sharpe    MaxDD   Turnover\n"
-        "             0.00     74.9%     1.20   -40.9%       688x\n"
-        "             1.00     60.0%     0.95   -40.9%       688x\n"
-        "\n"
-        "Breakeven (Sharpe = 0): none within the tested ladder"
-    )
 
 
 @dataclass(frozen=True)
@@ -77,7 +37,7 @@ def test_run_cost_sweep_varies_the_half_spread_and_holds_the_commission_fixed(
     config = BacktestConfig(name="T", data="data/raw", cost_bps=99.0, commission_bps=0.5)
     ladder: Sequence[float] = (0.0, 0.25, 2.0)
 
-    points = run_cost_sweep(config, ladder)
+    points = run_cost_sweep(ladder, config=config)
 
     assert [c.cost_bps for c in seen] == [0.0, 0.25, 2.0]
     assert [c.commission_bps for c in seen] == [0.5, 0.5, 0.5]

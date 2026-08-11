@@ -51,27 +51,23 @@ sample reports, the full cost curve, and how to regenerate them.
 ```bash
 uv sync
 uv run scripts/fetch_data.py configs/fetch_data.json
-uv run scripts/run_zscore_backtest.py configs/zscore_rebalanced_neutral.json -v
-uv run scripts/cost_sweep.py configs/zscore_rebalanced_neutral.json
+uv run scripts/run_zscore_backtest.py configs/zscore_rebalanced_neutral.json -v --cost-sweep
 ```
 
 No dataset is committed — the first command pulls the sample 8-ETF universe
 (2015–2025 daily bars) from yfinance into `data/raw`. The second runs the
 strategy and writes a PDF report to `output/zscore_ma/`; `-v` prints the
-trade blotter as it goes (`-vv` adds the full numeric trail). The third
-re-runs the config across a ladder of trading costs and prints the
-breakeven half-spread. Swap in `configs/zscore_backtest.json` for the
-risk-sized band-trading variant.
-
-Add `--cost-sweep` to a `run_zscore_backtest.py` run to fold the ladder into
-the report as a Sharpe-vs-cost page.
+trade blotter as it goes (`-vv` adds the full numeric trail), and
+`--cost-sweep` re-runs the config across a ladder of trading costs and folds
+a Sharpe-vs-cost page with the breakeven half-spread into the report. Swap
+in `configs/zscore_backtest.json` for the risk-sized band-trading variant.
 
 ## Project structure
 
 ```
 src/backtester/   # library source (src layout)
 tests/            # tests, mirroring src/backtester/ module paths
-scripts/          # CLI entry points (data fetch, run a backtest, cost sweep)
+scripts/          # CLI entry points (data fetch, run a backtest)
 configs/          # backtest/data-fetch configs consumed by scripts/
 examples/reports/ # committed sample reports (see its own README)
 pyproject.toml    # project metadata, dependencies, and tool config

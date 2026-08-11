@@ -33,10 +33,10 @@ def verbosity_to_level(count: int) -> int:
 
 
 def run_backtest(
-    config: BacktestConfig,
     strategy: Strategy,
     portfolio_factory: PortfolioFactory,
     risk_manager_factory: RiskManagerFactory,
+    config: BacktestConfig,
 ) -> PerformanceTracker:
     market_data = ParquetMarketData(Path(config.data), tickers=config.tickers)
     portfolio = portfolio_factory(market_data)
@@ -64,23 +64,23 @@ def run_strategy_and_benchmark(config: BacktestConfig) -> dict[str, PerformanceT
     exits regardless of config — it is a passive reference, not a thing under
     test — but it pays the same trading costs, so the comparison is fair."""
     strategy_tracker = run_backtest(
-        config,
         ZScoreMovingAverageStrategy(window=config.window, winsor_limit=config.winsor_limit),
-        lambda price_source: build_portfolio(config, price_source),
+        lambda price_source: build_portfolio(price_source, config),
         lambda portfolio: PositionExitRiskManager(
             portfolio=portfolio,
             stop_loss_pct=config.stop_loss_pct,
             take_profit_pct=config.take_profit_pct,
             max_holding_days=config.max_holding_days,
         ),
+        config,
     )
     benchmark_tracker = run_backtest(
-        config,
         BuyAndHoldStrategy(),
         lambda price_source: EqualWeightPortfolio(
             price_source=price_source, initial_cash=config.initial_cash
         ),
         lambda portfolio: None,
+        config,
     )
     return {"Strategy": strategy_tracker, "Buy & Hold": benchmark_tracker}
 
