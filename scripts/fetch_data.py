@@ -25,9 +25,9 @@ def main() -> None:
         level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s"
     )
 
-    out = Path(config.out)
-    fetch_to_parquet(config.tickers, config.start, config.end, out)
-    logger.info("Done — Parquet files written to %s", out)
+    out_path = Path(config.out)
+    fetch_to_parquet(config.tickers, config.start, config.end, out_path)
+    logger.info("Done — wrote %s", out_path)
 
 
 if __name__ == "__main__":

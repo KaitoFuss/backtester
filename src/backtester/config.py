@@ -11,7 +11,7 @@ class FetchDataConfig:
     tickers: list[str]
     start: str
     end: str
-    out: str = "data/raw"
+    out: str = "data/raw.parquet"
 
     @classmethod
     def from_json(cls, path: Path) -> Self:
