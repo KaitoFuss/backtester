@@ -1,6 +1,6 @@
 {
   "name": "Score Scaling Neutral",
-  "data": "data/raw",
+  "data": "data/raw.parquet",
   "tickers": ["SPY", "QQQ", "TLT", "IEF", "GLD", "DBC", "UUP", "FXE"],
   "portfolio": "score_proportional",
   "window": 20,

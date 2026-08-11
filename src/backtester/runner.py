@@ -8,7 +8,7 @@ from pathlib import Path
 
 from backtester.config import BacktestConfig
 from backtester.core.engine import Engine, Portfolio, PriceSource, RiskManager, Strategy
-from backtester.data.parquet_market_data import ParquetMarketData
+from backtester.data.frame_market_data import FrameMarketData
 from backtester.execution.cost_aware import CostAwareExecutionHandler
 from backtester.execution.ideal import IdealExecutionHandler
 from backtester.portfolio.equal_weight import EqualWeightPortfolio
@@ -38,7 +38,7 @@ def run_backtest(
     risk_manager_factory: RiskManagerFactory,
     config: BacktestConfig,
 ) -> PerformanceTracker:
-    market_data = ParquetMarketData(Path(config.data), tickers=config.tickers)
+    market_data = FrameMarketData(Path(config.data), tickers=config.tickers)
     portfolio = portfolio_factory(market_data)
     tracker = PerformanceTracker(portfolio=portfolio)
 
