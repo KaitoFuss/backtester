@@ -40,7 +40,7 @@ dist/
 build/
 
 # Local data
-data/
+/data/
 
 # Generated backtest plots
 output/
