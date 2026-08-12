@@ -17,34 +17,38 @@ model never resizes a held position and so has nothing to band.
 
 | | Config | Portfolio model | Total return | Sharpe | Max DD | Annual turnover | Breakeven |
 |---|---|---|---|---|---|---|---|
-| [Score Scaling Neutral](score_scaling_neutral_report.pdf) | `configs/zscore_rebalanced_neutral.json` | `score_proportional`, dollar-neutral | -37.6% | -0.31 | -40.9% | ~688x | 0.31 bp |
-| [Vol Sized](vol_sized_report.pdf) | `configs/zscore_backtest.json` | `inverse_vol`, band trading | -25.3% | -0.19 | -45.0% | ~163x | none |
-| Buy & Hold (both reports) | — | `equal_weight` | +83.6% | 0.73 | -18.4% | ~0.2x | — |
+| [Score Scaling Neutral](score_scaling_neutral_report.pdf) | `configs/zscore_rebalanced_neutral.json` | `score_proportional`, dollar-neutral | -37.6% | -0.37 | -40.9% | ~689x | 0.19 bp |
+| [Vol Sized](vol_sized_report.pdf) | `configs/zscore_backtest.json` | `inverse_vol`, band trading | -25.3% | -0.25 | -45.0% | ~163x | none |
+| Buy & Hold (both reports) | — | `equal_weight` | +83.6% | 0.52 | -18.4% | ~0.2x | — |
 
-Turnover is gross traded notional as a multiple of equity, divided by the
-10-year window. The reports themselves show the raw whole-period figure
-instead (6,885x and 1,632x).
+Sharpe is computed against a **2% annualized risk-free rate**
+(`config.risk_free_rate`, which both shipped configs set): mean excess daily
+return over the standard deviation of daily returns, annualized by the square
+root of the observed return frequency. The benchmark leg is measured against
+the same rate, so its 0.52 is an excess-return Sharpe too, not a raw one.
+Turnover is **one-way traded notional per year** as a multiple of equity —
+the reports print that same annualized figure.
 
 ## What the cost curve shows
 
 This is the finding, and it is not a flattering one.
 
 Run Score Scaling Neutral with no costs at all and it returns **+74.9% at a
-Sharpe of 0.38** — which is exactly why a backtest without a cost model is
+Sharpe of 0.32** — which is exactly why a backtest without a cost model is
 worthless. That strategy rebalances to its exact target weights every bar and
-turns over roughly 688x its equity per year. At that turnover the entire
+turns over roughly 689x its equity per year. At that turnover the entire
 frictionless result sits *inside* the cost term.
 
 The number that actually matters is the breakeven half-spread: hold the
 shipped 0.5 bp commission fixed and sweep `cost_bps`, and Sharpe crosses zero
-at **0.31 bp** — about **0.8 bp of total cost per fill**. Under a cent on a
+at **0.19 bp** — about **0.7 bp of total cost per fill**. Under a cent on a
 $100 ETF is the whole edge. Real ETF spreads are wider than that
 before you get to commission, borrow, or impact, so the honest reading is that
 this signal has no tradable edge at this rebalancing frequency, and the
 frictionless number was never a result — it was an artifact of not charging
 for trading.
 
-Vol Sized has no breakeven at all: it loses money (-4.9%, Sharpe -0.03) before
+Vol Sized has no breakeven at all: it loses money (-4.9%, Sharpe -0.09) before
 any cost is charged, so there is nothing for costs to erode. It turns over ~4x
 less than the neutral book and therefore degrades ~4x more gently, which is the
 only thing the comparison demonstrates.

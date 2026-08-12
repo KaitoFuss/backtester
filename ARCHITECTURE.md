@@ -60,15 +60,23 @@ aren't automatically protected.
 
 ## Data layer (`data/`)
 
-`ParquetMarketData` reads one Parquet file per trading day from a directory
-(filename `YYYY-MM-DD.parquet`), tickers as the row index, `close` required
-and `open`/`high`/`low`/`volume` optional per file. Missing tickers in a
-given file are silently skipped rather than erroring — the data layer does
-not validate cross-ticker column consistency. A single instance is wired in
-twice: as the `Engine`'s `DataHandler` and as the shared `PriceSource` for
-`Portfolio`/`ExecutionHandler` (so its price cache only ever reflects bars
-already consumed by the loop). `data/fetch_yfinance.py` downloads daily bars
-into that layout.
+`FrameMarketData` reads a single tidy Parquet file — one row per
+`(date, ticker)`, columns `date, ticker, open, high, low, close, volume`,
+with `close` required and `open`/`high`/`low`/`volume` optional per row. The
+whole history is read once at construction, filtered to the config's
+universe, and grouped by date into the run's `MarketEvent` list, so a backtest
+costs one file open rather than one per trading day. A row whose optional
+fields are null simply yields a `Bar` without them; a ticker with no row on a
+day has no bar at all, so the data layer never fabricates a price and does not
+validate cross-ticker column consistency.
+
+A single instance is wired in twice: as the `Engine`'s `DataHandler` and as
+the shared `PriceSource` for `Portfolio`/`ExecutionHandler`. `get_price` reads
+a cache that `get_next_bar` populates, so it only ever reflects bars already
+consumed by the loop — that is what keeps execution from reading ahead.
+`data/fetch_yfinance.py` downloads daily bars into that layout, sorted by date
+then ticker, overwriting the target file wholesale so a previous fetch with a
+different universe cannot leak into the current one.
 
 ## Components
 
@@ -144,6 +152,19 @@ into that layout.
   monthly-returns heatmap, an optional Sharpe-vs-cost sensitivity page, and a
   full config dump. The overview page is also written out as a PNG beside the
   PDF, which is where the README's hero image comes from.
+
+  Two metric conventions are worth stating outright, because both legs of a
+  report are measured by them. **Sharpe** is the arithmetic mean *excess*
+  period return over the standard deviation of those excess returns,
+  annualized by the square root of the observed return frequency; the excess
+  is taken against `config.risk_free_rate` (annualized, de-annualized
+  geometrically to the period), which the shipped configs set to `0.02`. It is
+  deliberately *not* `annualized_return / annualized_vol` — `annualized_return`
+  remains a geometric CAGR off elapsed calendar time, and the two answer
+  different questions, so both appear in the report. **Turnover** is one-way
+  traded notional (every fill counted once, so a round trip counts twice)
+  divided by average equity and by the elapsed years — an annual rate, not a
+  whole-period total.
 
 `runner.py` owns the wiring end to end, so the CLI
 (`scripts/run_zscore_backtest.py`) and the cost sweep (`sweep.py`) build an
