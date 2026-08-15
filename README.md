@@ -44,10 +44,10 @@ Sharpes are excess-return figures against a 2% annualized risk-free rate
 With costs switched off it returns +74.9% at 0.32 — the whole result lives
 inside the cost term. It rebalances every bar, turns over ~689x its equity a
 year (gross traded notional, every fill counted once), and its Sharpe
-crosses zero at a **0.19 bp** half-spread on top of the shipped commission. That fragility is the
-interesting output here, not the return. See
-[`examples/reports/`](examples/reports/) for both committed sample reports,
-the full cost curve, and how to regenerate them.
+crosses zero at a **0.19 bp** half-spread on top of the shipped commission.
+That fragility is the interesting output here, not the return. See
+[`examples/reports/`](examples/reports/) for both committed sample
+reports, the full cost curve, and how to regenerate them.
 
 ## Quickstart
 
