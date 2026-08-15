@@ -161,10 +161,10 @@ different universe cannot leak into the current one.
   geometrically to the period), which the shipped configs set to `0.02`. It is
   deliberately *not* `annualized_return / annualized_vol` — `annualized_return`
   remains a geometric CAGR off elapsed calendar time, and the two answer
-  different questions, so both appear in the report. **Turnover** is one-way
-  traded notional (every fill counted once, so a round trip counts twice)
-  divided by average equity and by the elapsed years — an annual rate, not a
-  whole-period total.
+  different questions, so both appear in the report. **Turnover** is gross
+  traded notional (every fill counted once, so a full round trip of the book
+  counts twice) divided by average equity and by the elapsed years — an annual
+  rate, not a whole-period total. It is never halved.
 
 `runner.py` owns the wiring end to end, so the CLI
 (`scripts/run_zscore_backtest.py`) and the cost sweep (`sweep.py`) build an

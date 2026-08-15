@@ -26,8 +26,9 @@ Sharpe is computed against a **2% annualized risk-free rate**
 return over the standard deviation of daily returns, annualized by the square
 root of the observed return frequency. The benchmark leg is measured against
 the same rate, so its 0.52 is an excess-return Sharpe too, not a raw one.
-Turnover is **one-way traded notional per year** as a multiple of equity —
-the reports print that same annualized figure.
+Turnover is **gross traded notional per year** as a multiple of equity: every
+fill is counted once, so a full round trip of the book counts twice. It is not
+halved. The reports print that same annualized figure.
 
 ## What the cost curve shows
 

@@ -46,7 +46,7 @@ class TradeMetrics:
     cpc_index: float
     time_in_market: float
     annual_turnover: float
-    """One-way traded notional per year, as a multiple of average equity. Each
+    """Gross traded notional per year, as a multiple of average equity. Every
     fill counts once, so a full round trip of the whole book is 2.0."""
 
 
