@@ -101,10 +101,9 @@ def sharpe_ratio(
         return 0.0
     rf_period = (1 + risk_free_rate) ** (1 / periods_per_year) - 1
     excess = [value - rf_period for value in returns]
-    _, stdev = mean_and_stdev(excess)
+    mean, stdev = mean_and_stdev(excess)
     if stdev == 0:
         return 0.0
-    mean: float = statistics.fmean(excess)
     result: float = mean / stdev * periods_per_year**0.5
     return result
 
