@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import cast
 
@@ -7,6 +8,11 @@ import pytest
 from backtester.data.fetch_yfinance import fetch_to_parquet
 
 TICKERS = ["AAPL", "MSFT"]
+
+
+def _empty_downloader(*_args: object, **_kwargs: object) -> pd.DataFrame:
+    columns = pd.MultiIndex.from_tuples([("AAPL", "Close"), ("AAPL", "Open")])
+    return pd.DataFrame([], columns=columns)
 
 
 def _fake_downloader(*_args: object, **_kwargs: object) -> pd.DataFrame:
@@ -147,3 +153,40 @@ def test_downloader_receives_requested_range(tmp_path: Path) -> None:
         "group_by": "ticker",
         "auto_adjust": False,
     }
+
+
+def test_summary_log_includes_date_range(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    out = tmp_path / "raw.parquet"
+
+    with caplog.at_level(logging.INFO):
+        fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-05", out, downloader=_fake_downloader)
+
+    summary = next(r for r in caplog.records if "Wrote" in r.getMessage())
+    assert "2024-01-02" in summary.getMessage()
+    assert "2024-01-05" in summary.getMessage()
+
+
+def test_head_is_logged(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    out = tmp_path / "raw.parquet"
+
+    with caplog.at_level(logging.INFO):
+        fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-05", out, downloader=_fake_downloader)
+
+    head_records = [r for r in caplog.records if "Head of fetched frame" in r.getMessage()]
+    assert head_records
+    assert "AAPL" in head_records[0].getMessage()
+    assert "close" in head_records[0].getMessage()
+
+
+def test_empty_frame_logs_warning_and_does_not_crash(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    out = tmp_path / "raw.parquet"
+
+    with caplog.at_level(logging.INFO):
+        fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-05", out, downloader=_empty_downloader)
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings
+    assert "no rows" in warnings[0].getMessage().lower()
+    assert "NaT" not in caplog.text

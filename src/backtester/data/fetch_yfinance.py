@@ -57,4 +57,23 @@ def fetch_to_parquet(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(out_path, index=False)
-    logger.info("Wrote %d rows for %d ticker(s) to %s", len(frame), len(tickers), out_path)
+
+    if frame.empty:
+        logger.warning(
+            "No rows written for %d ticker(s) to %s: fetched frame was empty",
+            len(tickers),
+            out_path,
+        )
+        return
+
+    date_min = frame["date"].min().strftime("%Y-%m-%d")
+    date_max = frame["date"].max().strftime("%Y-%m-%d")
+    logger.info(
+        "Wrote %d rows for %d ticker(s) to %s (dates %s to %s)",
+        len(frame),
+        len(tickers),
+        out_path,
+        date_min,
+        date_max,
+    )
+    logger.info("Head of fetched frame:\n%s", frame.head().to_string(index=False))
