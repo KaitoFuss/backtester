@@ -10,7 +10,7 @@ TICKERS = ["AAPL", "MSFT"]
 
 
 def _fake_downloader(*_args: object, **_kwargs: object) -> pd.DataFrame:
-    dates = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
+    dates = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"])
     columns = pd.MultiIndex.from_tuples(
         [
             ("AAPL", "Close"),
@@ -30,6 +30,8 @@ def _fake_downloader(*_args: object, **_kwargs: object) -> pd.DataFrame:
             [150.0, 148.0, 151.0, 147.0, 1_000_000, 300.0, 298.0, 302.0, 297.0, 2_000_000],
             [152.0, 150.0, 153.0, 149.0, 1_100_000, 302.0, 300.0, 304.0, 299.0, 2_100_000],
             [float("nan")] * 5 + [305.0, 303.0, 306.0, 302.0, 2_200_000],
+            # AAPL has a close but no volume: the row survives, the field is null.
+            [154.0, 153.0, 155.0, 152.0, float("nan"), 307.0, 305.0, 308.0, 304.0, 2_300_000],
         ],
         index=dates,
         columns=columns,
@@ -65,8 +67,23 @@ def test_missing_close_rows_are_dropped(tmp_path: Path) -> None:
 
     frame = pd.read_parquet(out)
     assert frame["close"].notna().all()
-    assert (frame["ticker"] == "AAPL").sum() == 2
-    assert (frame["ticker"] == "MSFT").sum() == 3
+    assert (frame["ticker"] == "AAPL").sum() == 3
+    assert (frame["ticker"] == "MSFT").sum() == 4
+
+
+def test_row_with_a_close_survives_a_missing_optional_field(tmp_path: Path) -> None:
+    """AAPL has a close but no volume on 2024-01-05 in the fixture. Only a
+    missing *close* drops the row; any other absent OHLCV field is written as
+    null, which is what ``FrameMarketData`` later reads back as ``None``."""
+    out = tmp_path / "raw.parquet"
+
+    fetch_to_parquet(TICKERS, "2024-01-02", "2024-01-06", out, downloader=_fake_downloader)
+
+    frame = pd.read_parquet(out).set_index(["date", "ticker"])
+    row = cast("pd.Series[float]", frame.loc[(pd.Timestamp("2024-01-05"), "AAPL")])
+    assert row["close"] == 154.0
+    assert row["open"] == 153.0
+    assert pd.isna(row["volume"])
 
 
 def test_carries_full_ohlcv(tmp_path: Path) -> None:
