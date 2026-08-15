@@ -75,6 +75,28 @@ def test_metrics_with_insufficient_history_are_zero() -> None:
     assert metrics.total_return == 0.0
 
 
+def test_annualized_metrics_are_all_zero_within_a_single_day() -> None:
+    """Observations that all land on one calendar day give no elapsed time to
+    annualize over and no observed return frequency to scale by. The returns
+    here have real dispersion, so a Sharpe *could* be computed — but only by
+    assuming a frequency the data does not have, and it would sit beside a
+    zeroed return and vol. All three must agree that there is nothing to
+    report."""
+    values = [1_000.0, 1_020.0, 990.0, 1_010.0]
+    tracker = PerformanceTracker(portfolio=FakePortfolioView(values), risk_free_rate=0.02)
+    for hour in range(len(values)):
+        tracker.track_market(
+            MarketEvent(timestamp=TS + timedelta(hours=hour), bars=LIVE_BARS),
+        )
+
+    metrics = tracker.metrics()
+
+    assert metrics.total_return != 0.0
+    assert metrics.annualized_return == 0.0
+    assert metrics.annualized_vol == 0.0
+    assert metrics.sharpe == 0.0
+
+
 def test_max_drawdown_reflects_peak_to_trough_decline() -> None:
     values = [1_000.0, 1_200.0, 800.0, 900.0]
     tracker = PerformanceTracker(portfolio=FakePortfolioView(values))

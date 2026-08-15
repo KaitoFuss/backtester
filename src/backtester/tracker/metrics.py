@@ -235,16 +235,23 @@ class PerformanceTracker:
             annualized_vol = (
                 statistics.stdev(returns) * periods_per_year**0.5 if len(returns) > 1 else 0.0
             )
+            sharpe = sharpe_ratio(returns, periods_per_year, self._risk_free_rate)
         else:
+            # Every observation lands on the same calendar day, so there is no
+            # elapsed time to annualize over and no observed return frequency
+            # to scale by. Computing a Sharpe here would mean assuming a
+            # frequency the data does not have, and it would then sit beside a
+            # zeroed annualized_return and annualized_vol as an incoherent
+            # triple. All three report nothing together.
             annualized_return = 0.0
-            periods_per_year = float(TRADING_DAYS_PER_YEAR)
             annualized_vol = 0.0
+            sharpe = 0.0
 
         return PerformanceMetrics(
             total_return=total_return,
             annualized_return=annualized_return,
             annualized_vol=annualized_vol,
-            sharpe=sharpe_ratio(returns, periods_per_year, self._risk_free_rate),
+            sharpe=sharpe,
             max_drawdown=max_drawdown(values),
             drawdown_to_vol=drawdown_to_vol_ratio(max_drawdown(values), annualized_vol),
         )
