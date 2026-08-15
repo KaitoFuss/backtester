@@ -9,45 +9,41 @@ Event-driven backtesting engine for equity strategies.
 
 ## What is this
 
-A single-threaded, deterministic backtesting engine built around a small
-event loop:
+Single-threaded, deterministic engine. Small event loop:
 
 ```
 DataHandler → MarketEvent → Strategy → SignalEvent → Portfolio → OrderEvent → ExecutionHandler → FillEvent → Portfolio
 ```
 
 Every component (`DataHandler`, `Strategy`, `Portfolio`, `ExecutionHandler`,
-`RiskManager`, `Tracker`) is a structural `Protocol`, so new strategies or
-portfolio-construction models plug in without touching the engine. It ships
-with three portfolio-construction models (risk-sized band trading,
-continuous conviction-weighted rebalancing, and a dumb equal-weight
-benchmark), entry-referenced stop-loss/take-profit/max-holding risk checks,
-cost-aware execution (per-fill half-spread and commission, plus a
-rebalancing drift band to suppress churn), a cost sweep that reports the
-breakeven half-spread, and a multi-page PDF performance report (equity
-curve, drawdown, trade stats, monthly returns, return correlation, cost
-sensitivity).
+`RiskManager`, `Tracker`) is structural `Protocol`. New strategies and
+portfolio models plug in without touching engine. Ships three
+portfolio-construction models (risk-sized band trading, continuous
+conviction-weighted rebalancing, dumb equal-weight benchmark),
+entry-referenced stop-loss/take-profit/max-holding risk checks, cost-aware
+execution (per-fill half-spread and commission, plus rebalancing drift band
+to suppress churn), cost sweep reporting breakeven half-spread, multi-page
+PDF report (equity curve, drawdown, trade stats, monthly returns, return
+correlation, cost sensitivity).
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design writeup.
+Full design writeup: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Sample output
 
 ![Score Scaling Neutral performance overview](examples/reports/score_scaling_neutral_overview.png)
 
-A dollar-neutral z-score mean-reversion strategy vs. an equal-weight
-buy-and-hold benchmark, both on the same 8-ETF universe, 2015–2025, charged
-1.0 bp half-spread and 0.5 bp commission per fill. The strategy returns
-**-37.6% at a Sharpe of -0.37** against the benchmark's +83.6% / 0.52. Both
-Sharpes are excess-return figures against a 2% annualized risk-free rate
-(`config.risk_free_rate`).
+Dollar-neutral z-score mean-reversion strategy vs equal-weight buy-and-hold
+benchmark. Same 8-ETF universe, 2015–2025, charged 1.0 bp half-spread and
+0.5 bp commission per fill. Strategy returns **-37.6% at a Sharpe of -0.37**
+against benchmark's +83.6% / 0.52. Both Sharpes are excess-return figures
+against a 2% annualized risk-free rate (`config.risk_free_rate`).
 
-With costs switched off it returns +74.9% at 0.32 — the whole result lives
-inside the cost term. It rebalances every bar, turns over ~689x its equity a
-year (gross traded notional, every fill counted once), and its Sharpe
-crosses zero at a **0.19 bp** half-spread on top of the shipped commission.
-That fragility is the interesting output here, not the return. See
-[`examples/reports/`](examples/reports/) for both committed sample
-reports, the full cost curve, and how to regenerate them.
+Costs off, it returns +74.9% at 0.32 — whole result lives inside cost term.
+It rebalances every bar, turns over ~689x its equity a year (gross traded
+notional, every fill counted once), and its Sharpe crosses zero at a
+**0.19 bp** half-spread on top of shipped commission. That fragility is the
+interesting output, not the return. Both committed sample reports, full cost
+curve, and regeneration steps: [`examples/reports/`](examples/reports/).
 
 ## Quickstart
 
@@ -57,14 +53,13 @@ uv run scripts/fetch_data.py configs/fetch_data.json
 uv run scripts/run_zscore_backtest.py configs/zscore_rebalanced_neutral.json -v --cost-sweep
 ```
 
-No dataset is committed — the first command pulls the sample 8-ETF universe
-(2015–2025 daily bars) from yfinance into a single tidy Parquet file,
-`data/raw.parquet`. The second runs the
-strategy and writes a PDF report to `output/zscore_ma/`; `-v` prints the
-trade blotter as it goes (`-vv` adds the full numeric trail), and
-`--cost-sweep` re-runs the config across a ladder of trading costs and folds
-a Sharpe-vs-cost page with the breakeven half-spread into the report. Swap
-in `configs/zscore_backtest.json` for the risk-sized band-trading variant.
+No dataset committed. First command pulls sample 8-ETF universe (2015–2025
+daily bars) from yfinance into one tidy Parquet file, `data/raw.parquet`.
+Second runs strategy, writes PDF report to `output/zscore_ma/`. `-v` prints
+trade blotter as it goes (`-vv` adds full numeric trail). `--cost-sweep`
+re-runs config across ladder of trading costs and folds Sharpe-vs-cost page
+with breakeven half-spread into report. Swap in
+`configs/zscore_backtest.json` for risk-sized band-trading variant.
 
 ## Project structure
 
@@ -88,8 +83,7 @@ uv run mypy .                # strict type check
 uv run pytest                # tests (coverage gate: --cov-fail-under=95)
 ```
 
-Optionally, install the pre-commit hooks so formatting/linting run
-automatically on `git commit`:
+Optional: install pre-commit hooks so formatting/linting run on `git commit`:
 
 ```bash
 uv run --with pre-commit pre-commit install
@@ -98,11 +92,11 @@ uv run --with pre-commit pre-commit install
 ## Conventions
 
 - `mypy --strict` across `src` and `tests`.
-- Ruff for lint + format; rule set and config live in `pyproject.toml`.
-- Structural typing via `Protocol` over inheritance/ABCs for every
-  pluggable component (see `core/engine.py`).
+- Ruff for lint + format. Rule set and config in `pyproject.toml`.
+- Structural typing via `Protocol` over inheritance/ABCs for every pluggable
+  component (see `core/engine.py`).
 - Tests mirror `src/backtester/` module paths 1:1 under `tests/`.
-- Dependencies are added via `uv add` / `uv add --dev`, never by hand-editing
+- Add dependencies via `uv add` / `uv add --dev`, never by hand-editing
   `pyproject.toml`.
 
 ## License
