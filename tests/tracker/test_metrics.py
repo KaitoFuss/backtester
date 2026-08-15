@@ -416,8 +416,21 @@ def test_turnover_is_annualized() -> None:
 
 
 def test_turnover_is_zero_without_a_measurable_span() -> None:
-    """A single observation gives no elapsed time to annualize over."""
+    """A single observation gives no elapsed time to annualize over. The round
+    trip matters: without it `trade_metrics` returns early on "no trades" and
+    the span guard this test exists for is never reached."""
     tracker = PerformanceTracker(portfolio=FakePortfolioView([100_000.0]))
     tracker.track_market(MarketEvent(timestamp=_ts(0), bars=LIVE_BARS))
+    for direction in cast(list[Literal["BUY", "SELL"]], ["BUY", "SELL"]):
+        tracker.track_fill(
+            FillEvent(
+                timestamp=_ts(0),
+                ticker="AAPL",
+                quantity=100,
+                direction=direction,
+                fill_price=50.0,
+            )
+        )
 
+    assert tracker.trade_metrics().num_trades == 1
     assert tracker.trade_metrics().annual_turnover == 0.0
