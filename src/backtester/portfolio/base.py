@@ -91,7 +91,10 @@ class BasePortfolio:
     ``max_gross`` is the leverage cap throughout: gross exposure as a multiple
     of equity (``1.0`` = fully invested, ``2.0`` = up to 2x long/short). Cash is
     tracked as an accounting balance, not a sizing constraint — the leverage cap
-    is.
+    is. A subclass running a no-trade band makes the cap approximate rather than
+    hard, since a banded position keeps its current weight instead of moving to
+    the target the budget was shared out into; see ``ScoreProportionalPortfolio``
+    for the bound.
     """
 
     def __init__(

@@ -80,8 +80,9 @@ into that layout.
   `process_fill`. Each portfolio writes its own `process_signal`, because an
   order means something different under band trading (a one-shot open) than
   under rebalancing (a delta toward a target). `max_gross` is the leverage
-  cap throughout (gross exposure as a multiple of equity); cash is an
-  accounting balance, not a sizing constraint.
+  cap throughout (gross exposure as a multiple of equity), approximate rather
+  than hard under a drift band — see `ScoreProportionalPortfolio` below; cash
+  is an accounting balance, not a sizing constraint.
 
   - `InverseVolPortfolio` — **band trading, sized purely by risk**. Weight
     is `sign(score) / trailing σ`, normalized so the batch of new opens
@@ -99,7 +100,15 @@ into that layout.
     way, so the position crosses zero in a single order instead of closing.
     `dollar_neutral=True` demeans every scored ticker (an exact `0.0` is a
     real reading, not a placeholder, so it takes part too) so signed weights
-    sum to zero.
+    sum to zero. `config.drift_band` is the no-trade region around the
+    target: a ticker whose weight gap sits inside the band is left alone,
+    which is the one lever this model has against turnover. It is a blunt
+    one — a band wide enough to matter for a daily signal also filters the
+    signal it is meant to trade. A nonzero band also softens `max_gross`:
+    targets sum to the whole budget, but a banded ticker holds its current
+    weight instead of moving to its target, so realized gross lands within
+    `drift_band × n_scored` of the cap (4% of equity at `drift_band: 0.005`
+    over 8 tickers).
   - `EqualWeightPortfolio` — deliberately the dumbest: a non-zero-scored
     ticker while flat takes an equal share of the remaining gross, then is
     never resized or closed. Exists so `BuyAndHoldStrategy` stays a genuine
@@ -110,8 +119,19 @@ into that layout.
   `portfolio/factory.py` (`inverse_vol` | `score_proportional` |
   `equal_weight`).
 
-- **`execution/`** — `IdealExecutionHandler`: fills at the current cached
-  price, no slippage or commission.
+- **`execution/`** — two handlers, composed rather than alternative.
+  `IdealExecutionHandler` fills at the current cached price and decides
+  *where* a fill happens; `CostAwareExecutionHandler` wraps it and decides
+  what that fill *costs*. `config.cost_bps` is the half-spread charged on a
+  single fill, always adverse (a BUY lifts the offer, a SELL hits the bid),
+  so a round trip pays twice it; `config.commission_bps` is charged on the
+  filled notional at the cost-adjusted price. The spread is folded into
+  `fill_price`, so equity, cash and realized PnL absorb it through the normal
+  fill path — `FillEvent.slippage` records what was paid for reporting only
+  and must never be subtracted again, or the cost is double-counted. Because
+  the wrapper only touches fills, any future execution model gets costs for
+  free. `runner.py` always wires the pair; costs default to `0.0`, so a
+  config that names neither runs frictionless.
 
 - **`risk/`** — `PositionExitRiskManager`: flattens a position on
   stop-loss, take-profit, or max-holding-days breach. Stateless — it reads
@@ -121,9 +141,16 @@ into that layout.
 - **`tracker/`** — `PerformanceTracker` (equity curve + metrics) and
   `report.py`/`plotting.py`, which render a multi-page PDF: an equity/
   drawdown chart with a trade-stats table and return-correlation heatmap, a
-  monthly-returns heatmap, and a full config dump.
+  monthly-returns heatmap, an optional Sharpe-vs-cost sensitivity page, and a
+  full config dump. The overview page is also written out as a PNG beside the
+  PDF, which is where the README's hero image comes from.
 
-`scripts/run_zscore_backtest.py` shows the full wiring end to end.
+`runner.py` owns the wiring end to end, so the CLI
+(`scripts/run_zscore_backtest.py`) and the cost sweep (`sweep.py`) build an
+identical engine — the sweep re-runs the same config once per rung of a cost
+ladder and interpolates the half-spread at which Sharpe crosses zero. The
+sweep is opt-in via `--cost-sweep`, which folds it into the report as a
+Sharpe-vs-cost page; there is no separate CLI for it.
 
 ## Logging conventions
 
@@ -162,11 +189,23 @@ Run at `-v`/`INFO` for a readable trade log; drop to `DEBUG` to retrace
 This engine intentionally stops short of a few things a production system
 would need:
 
-- **No slippage or commission** — `IdealExecutionHandler` fills every order
-  at the current cached price.
-- **No turnover control on `ScoreProportionalPortfolio`** — it rebalances
-  to the exact target weight every bar with no drift band, so turnover is
-  uncontrolled by design; that would be the one place to add one.
+- **No market impact or capacity model** — a fill assumes the entire order
+  transacts at one price regardless of size. Cost is a fixed number of basis
+  points per fill, so a $1m order and a $1bn order pay the same rate; there
+  is no participation-rate or square-root impact term, and no notion of the
+  strategy's capacity.
+- **No ADV/volume-aware sizing** — `volume` is an optional column the data
+  layer will read but nothing consumes. Position sizes are never capped
+  against a ticker's average daily volume, so a backtest will happily size
+  into liquidity that does not exist.
+- **No per-ticker cost table** — `cost_bps`/`commission_bps` are single
+  scalars applied to every ticker. A real universe has per-instrument
+  spreads that differ by an order of magnitude, and a strategy trading the
+  wide names pays far more than a flat rate implies.
+- **No short borrow cost** — the flagship config runs dollar-neutral, which
+  means roughly half the book is short at all times, and it currently shorts
+  for free. No borrow fee, no hard-to-borrow constraint, no recall risk. On
+  a book this size that is a real and permanently favorable omission.
 - **Entry-referenced risk exits pair poorly with continuous rebalancing** —
   `PositionExitRiskManager`'s thresholds are relative to entry price, so a
   forced exit on a `ScoreProportionalPortfolio` position is simply

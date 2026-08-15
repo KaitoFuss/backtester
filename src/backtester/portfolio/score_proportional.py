@@ -39,9 +39,34 @@ class ScoreProportionalPortfolio(BasePortfolio):
     anywhere else. When only one ticker is scored it demeans to exactly zero
     against itself, so no position is taken.
 
-    Turnover is deliberately uncontrolled — there is no drift band yet, so any
-    change in score retrades. Until the execution layer models slippage and
-    commission, that churn is free here and would not be in reality.
+    ``drift_band`` is the no-trade region: a ticker whose target weight sits
+    within ``drift_band`` of what is already held is left alone, so the
+    position drifts with price rather than being retraded for a fraction of a
+    basis point. Without it this portfolio retrades every scored name every
+    bar, because a score always moves a little. Wider band, lower cost, staler
+    book.
+
+    The band applies uniformly, **including to closes**: a position whose
+    target weight has fallen inside the band is held rather than trimmed, so
+    small dust positions accumulate and survive until the end-of-run
+    liquidation clears them. That is deliberate — exempting closes would let a
+    name be closed and reopened for sub-band reasons, which is exactly the
+    churn the band exists to remove.
+
+    A nonzero band therefore makes ``max_gross`` approximate rather than hard.
+    The targets already sum to the whole budget; a banded ticker keeps its
+    current weight while every unbanded one trades to its target, so realized
+    gross comes out at ``max_gross + sum(current - target)`` over the banded
+    names alone. Each of those terms is smaller than ``drift_band`` by
+    construction, so the overshoot (or undershoot) is bounded by
+    ``drift_band * n_scored`` — up to 4% of equity either side of the cap at
+    ``drift_band=0.005`` over 8 tickers.
+
+    Note that ``existing_gross`` does *not* mediate this. It reserves gross
+    only for tickers missing from ``event.scores`` altogether, and
+    ``ZScoreMovingAverageStrategy`` scores every ticker every bar, so in steady
+    state that reserve is zero and only warmup, zero-stdev or missing-bar bars
+    trigger it.
     """
 
     def __init__(
@@ -50,9 +75,11 @@ class ScoreProportionalPortfolio(BasePortfolio):
         initial_cash: float = 100_000.0,
         max_gross: float = 1.0,
         dollar_neutral: bool = False,
+        drift_band: float = 0.0,
     ) -> None:
         super().__init__(price_source=price_source, initial_cash=initial_cash, max_gross=max_gross)
         self._dollar_neutral = dollar_neutral
+        self._drift_band = drift_band
 
     def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
         equity = self.mark_to_market()
@@ -95,9 +122,8 @@ class ScoreProportionalPortfolio(BasePortfolio):
     def _orders_from_targets(
         self, weights: Mapping[Ticker, float], equity: float, timestamp: datetime
     ) -> list[OrderEvent]:
-        """Trade each ticker's target weight minus what it already holds. The
-        single place a target becomes an order, so a drift band (only retrade
-        once the gap exceeds some threshold) would slot in here."""
+        """Trade each ticker's target weight minus what it already holds,
+        skipping tickers whose gap sits inside ``self._drift_band``."""
         orders: list[OrderEvent] = []
         for ticker, weight in weights.items():
             price = self._price_source.get_price(ticker)
@@ -105,6 +131,18 @@ class ScoreProportionalPortfolio(BasePortfolio):
                 continue
             position = self._positions.get(ticker)
             current_qty = position.quantity if position else 0
+
+            current_weight = current_qty * price / equity
+            if abs(weight - current_weight) < self._drift_band:
+                logger.debug(
+                    "%s  %s: weight gap %.5f inside drift_band=%.5f, holding",
+                    timestamp,
+                    ticker,
+                    abs(weight - current_weight),
+                    self._drift_band,
+                )
+                continue
+
             delta = round(weight * equity / price) - current_qty
             if delta == 0:
                 continue

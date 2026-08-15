@@ -94,3 +94,28 @@ def test_backtest_config_overrides_sizing_defaults(tmp_path: Path) -> None:
     assert config.max_gross == 2.0
     assert config.dollar_neutral is True
     assert config.winsor_limit == 2.5
+
+
+def test_cost_and_drift_fields_default_to_zero(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text('{"name": "T", "data": "data/raw"}')
+
+    config = BacktestConfig.from_json(path)
+
+    assert config.cost_bps == 0.0
+    assert config.commission_bps == 0.0
+    assert config.drift_band == 0.0
+
+
+def test_cost_and_drift_fields_read_from_json(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"name": "T", "data": "data/raw", "cost_bps": 1.0, '
+        '"commission_bps": 0.5, "drift_band": 0.005}'
+    )
+
+    config = BacktestConfig.from_json(path)
+
+    assert config.cost_bps == 1.0
+    assert config.commission_bps == 0.5
+    assert config.drift_band == 0.005

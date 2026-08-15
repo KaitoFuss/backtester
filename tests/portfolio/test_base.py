@@ -161,3 +161,27 @@ def test_fill_partial_reduce_keeps_the_cost_basis() -> None:
     assert portfolio.get_position("AAPL") == Position(
         ticker="AAPL", quantity=6, entry_price=90.0, entry_date=TS
     )
+
+
+def test_cash_ignores_the_slippage_field() -> None:
+    """slippage is reporting-only: the spread is already inside fill_price,
+    so counting it again would double-charge every trade."""
+    portfolio = BasePortfolio(price_source=FakePriceSource({"SPY": 100.0}), initial_cash=10_000.0)
+
+    portfolio.process_fill(
+        FillEvent(
+            timestamp=datetime(2024, 1, 1),
+            ticker="SPY",
+            quantity=10,
+            direction="BUY",
+            fill_price=100.1,
+            commission=0.5,
+            slippage=999.0,
+        )
+    )
+
+    # cash = 10_000 - (10 * 100.1) - 0.5, with slippage=999.0 having no effect;
+    # equity adds the position back at 100.0. Asserted through mark_to_market()
+    # rather than _cash, matching how every other test in this module reads the
+    # portfolio.
+    assert portfolio.mark_to_market() == pytest.approx(10_000.0 - 1001.0 - 0.5 + 1000.0)

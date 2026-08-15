@@ -7,7 +7,7 @@ from backtester.portfolio.score_proportional import ScoreProportionalPortfolio
 PORTFOLIO_NAMES = ("inverse_vol", "score_proportional", "equal_weight")
 
 
-def build_portfolio(config: BacktestConfig, price_source: PriceSource) -> Portfolio:
+def build_portfolio(price_source: PriceSource, config: BacktestConfig) -> Portfolio:
     """Construct the portfolio named by ``config.portfolio``, passing each one
     the subset of the flat config it understands."""
     match config.portfolio:
@@ -26,6 +26,7 @@ def build_portfolio(config: BacktestConfig, price_source: PriceSource) -> Portfo
                 initial_cash=config.initial_cash,
                 max_gross=config.max_gross,
                 dollar_neutral=config.dollar_neutral,
+                drift_band=config.drift_band,
             )
         case "equal_weight":
             return EqualWeightPortfolio(

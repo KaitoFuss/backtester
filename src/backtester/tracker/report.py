@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 
 from backtester.config import BacktestConfig
+from backtester.tracker.cost_curve import CostPoint, breakeven_cost
 from backtester.tracker.metrics import PerformanceMetrics, TradeMetrics
 from backtester.tracker.plotting import draw_equity_curve
 
@@ -26,8 +27,9 @@ _MUTED = "#898781"
 _GRID = "#e1e0d9"
 _GOOD_TINT = "#e3f5e3"
 _CRITICAL_TINT = "#fbe3e3"
+_NEGATIVE = "#e34948"
 
-_DIVERGING = LinearSegmentedColormap.from_list("diverging", ["#e34948", "#f0efec", "#2a78d6"])
+_DIVERGING = LinearSegmentedColormap.from_list("diverging", [_NEGATIVE, "#f0efec", "#2a78d6"])
 
 _SUMMARY_COLUMNS = ("Annual Return", "Max DD", "Sharpe")
 _SUMMARY_FORMATS = {"Annual Return": "{:.1%}", "Max DD": "{:.1%}", "Sharpe": "{:.2f}"}
@@ -124,6 +126,7 @@ def _add_overview_page(
     metrics: Mapping[str, PerformanceMetrics],
     trade_metrics: Mapping[str, TradeMetrics],
     correlation: pd.DataFrame,
+    png_path: Path | None = None,
 ) -> None:
     labels = list(metrics)
     fig = _new_page(f"Performance Overview - {name}")
@@ -168,6 +171,10 @@ def _add_overview_page(
             annotation_fontsize=9,
         )
         ax_correlation.set_title("Return Correlation", color=_INK, fontsize=11, loc="left", pad=8)
+
+    # The same figure doubles as the repo's hero image, so a clone can reproduce it.
+    if png_path is not None:
+        fig.savefig(png_path, facecolor=_SURFACE, dpi=150, bbox_inches="tight")
     _save_page(pdf, fig)
 
 
@@ -294,6 +301,64 @@ def _add_config_page(pdf: PdfPages, config: BacktestConfig) -> None:
     _save_page(pdf, fig)
 
 
+def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
+    """Sharpe against trading cost, with the breakeven half-spread marked. The
+    slope is the point: a signal whose Sharpe collapses over a fraction of a
+    basis point is inside the cost term, not above it.
+
+    Only the half-spread is swept; the commission is fixed. This page travels on
+    its own, so it names the commission in the subtitle, on the axis and in the
+    breakeven annotation rather than relying on a reader who has the README."""
+    if not points:
+        return
+
+    commission = points[0].commission_bps
+    fig = _new_page("Cost Sensitivity")
+    fig.text(
+        0.04,
+        0.905,
+        f"Sharpe vs half-spread per fill. Commission held fixed at {commission:.2f} bp "
+        "per fill on every rung, so the whole curve already pays it.",
+        color=_MUTED,
+        fontsize=9.5,
+        ha="left",
+    )
+    ax = fig.add_axes((0.09, 0.12, 0.85, 0.72))
+    ax.set_facecolor(_SURFACE)
+
+    costs = [point.cost_bps for point in points]
+    sharpes = [point.sharpe for point in points]
+    ax.plot(costs, sharpes, marker="o", color=_INK, linewidth=1.4, markersize=4)
+    ax.axhline(0.0, color=_MUTED, linewidth=0.8, linestyle="--")
+
+    breakeven = breakeven_cost(points)
+    if breakeven is not None:
+        ax.axvline(breakeven, color=_NEGATIVE, linewidth=1.0)
+        ax.annotate(
+            f"breakeven ≈ {breakeven:.2f} bp half-spread\n"
+            f"(+ {commission:.2f} bp commission held fixed)",
+            xy=(breakeven, 0.0),
+            xytext=(6, 10),
+            textcoords="offset points",
+            color=_NEGATIVE,
+            fontsize=9,
+        )
+
+    ax.set_xlabel(
+        f"half-spread per fill (bp), on top of a fixed {commission:.2f} bp commission",
+        color=_MUTED,
+        fontsize=9,
+    )
+    ax.set_ylabel("Sharpe", color=_MUTED, fontsize=9)
+    ax.tick_params(colors=_MUTED, labelsize=9, length=0)
+    ax.grid(True, color=_GRID, linewidth=0.6)
+    ax.set_axisbelow(True)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    _save_page(pdf, fig)
+
+
 def save_report(
     output_dir: Path,
     histories: Mapping[str, Sequence[tuple[datetime, float]]],
@@ -301,11 +366,23 @@ def save_report(
     trade_metrics: Mapping[str, TradeMetrics],
     monthly_tables: Mapping[str, pd.DataFrame],
     correlation: pd.DataFrame,
+    *,
+    cost_sweep: Sequence[CostPoint] | None = None,
     config: BacktestConfig,
 ) -> Path:
     path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
     with PdfPages(path) as pdf:
-        _add_overview_page(pdf, config.name, histories, metrics, trade_metrics, correlation)
+        _add_overview_page(
+            pdf,
+            config.name,
+            histories,
+            metrics,
+            trade_metrics,
+            correlation,
+            png_path=path.with_name(f"{path.stem}_overview.png"),
+        )
         _add_monthly_page(pdf, monthly_tables)
+        if cost_sweep is not None:
+            _add_cost_sweep_page(pdf, cost_sweep)
         _add_config_page(pdf, config)
     return path
