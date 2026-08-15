@@ -1,9 +1,9 @@
 import logging
 import math
-import statistics
 from collections import deque
 
 from backtester.core.events import MarketEvent, SignalEvent, Ticker
+from backtester.stats import mean_and_stdev
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +43,13 @@ class ZScoreMovingAverageStrategy:
                 )
                 continue
 
-            stdev = statistics.stdev(returns)
+            mean, stdev = mean_and_stdev(returns)
             if stdev == 0:
                 logger.debug(
                     "%s  %s: zero return stdev over window, skipping", event.timestamp, ticker
                 )
                 continue
 
-            mean = statistics.fmean(returns)
             raw_z = (returns[-1] - mean) / stdev
             z = max(-self._winsor_limit, min(self._winsor_limit, raw_z))
             scores[ticker] = -z

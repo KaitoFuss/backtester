@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 import yfinance as yf
@@ -8,59 +9,71 @@ import yfinance as yf
 logger = logging.getLogger(__name__)
 
 _FIELDS = (
-    ("close", "Close"),
     ("open", "Open"),
     ("high", "High"),
     ("low", "Low"),
+    ("close", "Close"),
     ("volume", "Volume"),
 )
+COLUMNS = ["date", "ticker", "open", "high", "low", "close", "volume"]
 
 
 def fetch_to_parquet(
     tickers: list[str],
     start: str,
     end: str,
-    out_dir: Path,
+    out_path: Path,
     downloader: Callable[..., pd.DataFrame] = yf.download,
 ) -> None:
-    """Download OHLCV history and write it out as one .parquet file per day.
+    """Download OHLCV history and write it as one tidy Parquet file.
 
-    Matches the exact per-day, per-ticker-row shape ParquetMarketData reads:
-    `close` required, `open`/`high`/`low`/`volume` present only when the
-    downloader returned a non-NaN value for that ticker/day (e.g. a ticker
-    not yet listed, or delisted, on a given day).
+    One row per (date, ticker), sorted by date then ticker — the order
+    ``FrameMarketData`` relies on to walk bars chronologically. Rows without a
+    close are dropped: a ticker not yet listed (or already delisted) on a day
+    has no bar at all, rather than a bar with a missing price.
 
-    Existing .parquet files in ``out_dir`` are deleted first: ``ParquetMarketData``
-    reads every file in the directory regardless of which fetch wrote it, so a
-    stale file from a previous fetch with a different ticker universe or date
-    range would silently mix into the new one.
+    The file is overwritten wholesale, so a previous fetch with a different
+    universe or date range cannot leak into this one.
     """
     data = downloader(tickers, start=start, end=end, group_by="ticker", auto_adjust=False)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stale_files = list(out_dir.glob("*.parquet"))
-    if stale_files:
-        logger.info("Deleting %d existing .parquet file(s) in %s", len(stale_files), out_dir)
-        for path in stale_files:
-            path.unlink()
-
+    records: list[dict[str, object]] = []
     for timestamp, row in data.iterrows():
-        frame = _row_to_frame(row, tickers)
-        if frame.empty:
-            continue
-        frame.to_parquet(out_dir / f"{timestamp:%Y-%m-%d}.parquet")
+        for ticker in tickers:
+            close = row.get((ticker, "Close"))
+            if close is None or pd.isna(close):
+                continue
+            record: dict[str, object] = {
+                "date": cast(pd.Timestamp, timestamp),
+                "ticker": ticker,
+            }
+            for field, column in _FIELDS:
+                value = row.get((ticker, column))
+                record[field] = float(value) if value is not None and pd.notna(value) else None
+            records.append(record)
 
+    frame = pd.DataFrame.from_records(records, columns=COLUMNS)
+    frame = frame.sort_values(["date", "ticker"]).reset_index(drop=True)
 
-def _row_to_frame(row: "pd.Series[float]", tickers: list[str]) -> pd.DataFrame:
-    records: dict[str, dict[str, float]] = {}
-    for ticker in tickers:
-        close = row.get((ticker, "Close"))
-        if close is None or pd.isna(close):
-            continue
-        record = {"close": float(close)}
-        for field, column in _FIELDS[1:]:
-            value = row.get((ticker, column))
-            if value is not None and pd.notna(value):
-                record[field] = float(value)
-        records[ticker] = record
-    return pd.DataFrame.from_dict(records, orient="index")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(out_path, index=False)
+
+    if frame.empty:
+        logger.warning(
+            "No rows written for %d ticker(s) to %s: fetched frame was empty",
+            len(tickers),
+            out_path,
+        )
+        return
+
+    date_min = frame["date"].min().strftime("%Y-%m-%d")
+    date_max = frame["date"].max().strftime("%Y-%m-%d")
+    logger.info(
+        "Wrote %d rows for %d ticker(s) to %s (dates %s to %s)",
+        len(frame),
+        len(tickers),
+        out_path,
+        date_min,
+        date_max,
+    )
+    logger.info("Head of fetched frame:\n%s", frame.head().to_string(index=False))

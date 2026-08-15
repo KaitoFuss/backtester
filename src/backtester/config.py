@@ -11,7 +11,7 @@ class FetchDataConfig:
     tickers: list[str]
     start: str
     end: str
-    out: str = "data/raw"
+    out: str = "data/raw.parquet"
 
     @classmethod
     def from_json(cls, path: Path) -> Self:
@@ -39,6 +39,8 @@ class BacktestConfig:
     take_profit_pct: float | None = None
     max_holding_days: int | None = None
     output_dir: str = "output"
+    risk_free_rate: float = 0.0
+    """Annualized risk-free rate subtracted from returns when computing Sharpe."""
 
     @classmethod
     def from_json(cls, path: Path) -> Self:

@@ -1,3 +1,4 @@
+import statistics
 from datetime import datetime, timedelta
 from typing import Literal, cast
 
@@ -8,6 +9,7 @@ from backtester.tracker.metrics import (
     PerformanceTracker,
     drawdown_to_vol_ratio,
     monthly_returns_table,
+    sharpe_ratio,
     strategy_correlation_matrix,
 )
 
@@ -71,6 +73,28 @@ def test_metrics_with_insufficient_history_are_zero() -> None:
 
     assert metrics == tracker.metrics()
     assert metrics.total_return == 0.0
+
+
+def test_annualized_metrics_are_all_zero_within_a_single_day() -> None:
+    """Observations that all land on one calendar day give no elapsed time to
+    annualize over and no observed return frequency to scale by. The returns
+    here have real dispersion, so a Sharpe *could* be computed — but only by
+    assuming a frequency the data does not have, and it would sit beside a
+    zeroed return and vol. All three must agree that there is nothing to
+    report."""
+    values = [1_000.0, 1_020.0, 990.0, 1_010.0]
+    tracker = PerformanceTracker(portfolio=FakePortfolioView(values), risk_free_rate=0.02)
+    for hour in range(len(values)):
+        tracker.track_market(
+            MarketEvent(timestamp=TS + timedelta(hours=hour), bars=LIVE_BARS),
+        )
+
+    metrics = tracker.metrics()
+
+    assert metrics.total_return != 0.0
+    assert metrics.annualized_return == 0.0
+    assert metrics.annualized_vol == 0.0
+    assert metrics.sharpe == 0.0
 
 
 def test_max_drawdown_reflects_peak_to_trough_decline() -> None:
@@ -174,8 +198,11 @@ def test_time_in_market_and_turnover_track_open_positions_across_bars() -> None:
 
     metrics = tracker.trade_metrics()
 
+    expected_years = (_ts(2) - _ts(0)).days / 365.25
     assert metrics.time_in_market == 1 / 3
-    assert metrics.turnover == (10 * 100.0 + 10 * 110.0) / 1_000.0
+    assert metrics.annual_turnover == pytest.approx(
+        (10 * 100.0 + 10 * 110.0) / 1_000.0 / expected_years
+    )
 
 
 def test_track_market_skips_bars_with_no_prices() -> None:
@@ -296,6 +323,74 @@ def test_strategy_correlation_matrix_is_one_for_identical_series() -> None:
     assert correlation.loc["A", "B"] == pytest.approx(1.0)
 
 
+def test_sharpe_is_annualized_mean_over_stdev() -> None:
+    returns = [0.01, -0.005, 0.02, 0.0, 0.015]
+
+    result = sharpe_ratio(returns, periods_per_year=252.0)
+
+    mean = statistics.fmean(returns)
+    expected = mean / statistics.stdev(returns) * 252.0**0.5
+    assert result == pytest.approx(expected)
+
+
+def test_risk_free_rate_lowers_sharpe() -> None:
+    returns = [0.01, -0.005, 0.02, 0.0, 0.015]
+
+    without = sharpe_ratio(returns, periods_per_year=252.0)
+    with_rf = sharpe_ratio(returns, periods_per_year=252.0, risk_free_rate=0.02)
+
+    assert with_rf < without
+
+
+def test_risk_free_rate_is_deannualized_geometrically() -> None:
+    # A constant-returns series would make `excess` constant too (stdev == 0,
+    # dividing by zero even in the "expected" computation below), so this
+    # needs genuine dispersion to exercise the geometric de-annualization.
+    returns = [0.002, -0.001, 0.0015, 0.0005, 0.001, -0.0005, 0.0025, 0.0, 0.0012, -0.0008]
+    rf = 0.02
+    rf_period = (1 + rf) ** (1 / 252.0) - 1
+
+    result = sharpe_ratio(returns, periods_per_year=252.0, risk_free_rate=rf)
+
+    excess = [r - rf_period for r in returns]
+    expected = statistics.fmean(excess) / statistics.stdev(excess) * 252.0**0.5
+    assert result == pytest.approx(expected)
+
+
+def test_zero_dispersion_gives_zero_sharpe() -> None:
+    assert sharpe_ratio([0.01, 0.01, 0.01], periods_per_year=252.0) == 0.0
+
+
+def test_fewer_than_two_returns_gives_zero_sharpe() -> None:
+    assert sharpe_ratio([0.01], periods_per_year=252.0) == 0.0
+
+
+def _tracker_over(values: list[float], risk_free_rate: float = 0.0) -> PerformanceTracker:
+    """A tracker fed one bar per value, so its equity curve is exactly `values`."""
+    tracker = PerformanceTracker(portfolio=FakePortfolioView(values), risk_free_rate=risk_free_rate)
+    for i in range(len(values)):
+        tracker.track_market(MarketEvent(timestamp=_ts(i), bars=LIVE_BARS))
+    return tracker
+
+
+def test_tracker_uses_the_configured_risk_free_rate() -> None:
+    rising = [1_000.0 * 1.001**i for i in range(60)]
+
+    plain = _tracker_over(rising)
+    charged = _tracker_over(rising, risk_free_rate=0.05)
+
+    assert charged.metrics().sharpe < plain.metrics().sharpe
+
+
+def test_zero_risk_free_rate_is_the_default() -> None:
+    rising = [1_000.0 * 1.001**i for i in range(60)]
+
+    assert (
+        _tracker_over(rising).metrics().sharpe
+        == _tracker_over(rising, risk_free_rate=0.0).metrics().sharpe
+    )
+
+
 def test_strategy_correlation_matrix_is_negative_for_inverse_series() -> None:
     base = [1_000.0, 1_010.0, 990.0, 1_020.0]
     inverse = [1_000.0, 990.0, 1_010.0, 980.0]
@@ -309,3 +404,55 @@ def test_strategy_correlation_matrix_is_negative_for_inverse_series() -> None:
     )
 
     assert cast(float, correlation.loc["A", "B"]) < 0
+
+
+def _tracker_spanning(years: float, traded_notional: float, equity: float) -> PerformanceTracker:
+    """Equity flat at `equity` over `years`, with one round trip of
+    `traded_notional` total (half on the buy, half on the sell)."""
+    days = round(years * 365.25)
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([equity, equity]))
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars=LIVE_BARS))
+    tracker.track_market(MarketEvent(timestamp=_ts(days), bars=LIVE_BARS))
+
+    half = traded_notional / 2
+    for direction in cast(list[Literal["BUY", "SELL"]], ["BUY", "SELL"]):
+        tracker.track_fill(
+            FillEvent(
+                timestamp=_ts(0),
+                ticker="AAPL",
+                quantity=100,
+                direction=direction,
+                fill_price=half / 100,
+            )
+        )
+    return tracker
+
+
+def test_turnover_is_annualized() -> None:
+    """Same traded notional over twice the span must report half the turnover."""
+    one_year = _tracker_spanning(years=1, traded_notional=1_000_000.0, equity=100_000.0)
+    two_years = _tracker_spanning(years=2, traded_notional=1_000_000.0, equity=100_000.0)
+
+    assert one_year.trade_metrics().annual_turnover == pytest.approx(10.0, rel=0.01)
+    assert two_years.trade_metrics().annual_turnover == pytest.approx(5.0, rel=0.01)
+
+
+def test_turnover_is_zero_without_a_measurable_span() -> None:
+    """A single observation gives no elapsed time to annualize over. The round
+    trip matters: without it `trade_metrics` returns early on "no trades" and
+    the span guard this test exists for is never reached."""
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([100_000.0]))
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars=LIVE_BARS))
+    for direction in cast(list[Literal["BUY", "SELL"]], ["BUY", "SELL"]):
+        tracker.track_fill(
+            FillEvent(
+                timestamp=_ts(0),
+                ticker="AAPL",
+                quantity=100,
+                direction=direction,
+                fill_price=50.0,
+            )
+        )
+
+    assert tracker.trade_metrics().num_trades == 1
+    assert tracker.trade_metrics().annual_turnover == 0.0

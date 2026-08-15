@@ -1,3 +1,12 @@
+"""Performance tracking and reporting metrics.
+
+Two different "average return" conventions appear side by side here, and
+they are not interchangeable: ``PerformanceMetrics.annualized_return`` is the
+geometric CAGR (what the equity curve actually compounded at), while the
+Sharpe ratio's numerator is the arithmetic mean of excess period returns
+(what a mean-variance framework wants). Do not unify them.
+"""
+
 import calendar
 import logging
 import statistics
@@ -9,6 +18,7 @@ import pandas as pd
 
 from backtester.core.engine import PortfolioView
 from backtester.core.events import FillEvent, MarketEvent, Ticker
+from backtester.stats import mean_and_stdev
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +45,9 @@ class TradeMetrics:
     payoff_factor: float
     cpc_index: float
     time_in_market: float
-    turnover: float
+    annual_turnover: float
+    """Gross traded notional per year, as a multiple of average equity. Every
+    fill counts once, so a full round trip of the whole book is 2.0."""
 
 
 @dataclass(frozen=True)
@@ -70,8 +82,30 @@ class _OpenLot:
     entry_commission: float
 
 
-def sharpe_ratio(annualized_return: float, annualized_vol: float) -> float:
-    return annualized_return / annualized_vol if annualized_vol > 0 else 0.0
+def sharpe_ratio(
+    returns: Sequence[float],
+    periods_per_year: float,
+    risk_free_rate: float = 0.0,
+) -> float:
+    """Annualized Sharpe: mean excess period return over its standard
+    deviation, scaled by the square root of periods per year.
+
+    ``risk_free_rate`` is annualized and de-annualized geometrically. Note the
+    numerator is the *arithmetic* mean of excess returns, not the geometric
+    CAGR reported as ``annualized_return`` — the two answer different
+    questions and both appear in the report.
+
+    ``0.0`` when there is no dispersion to normalize against, or fewer than
+    two returns to measure it from."""
+    if len(returns) < 2:
+        return 0.0
+    rf_period = (1 + risk_free_rate) ** (1 / periods_per_year) - 1
+    excess = [value - rf_period for value in returns]
+    mean, stdev = mean_and_stdev(excess)
+    if stdev == 0:
+        return 0.0
+    result: float = mean / stdev * periods_per_year**0.5
+    return result
 
 
 def drawdown_to_vol_ratio(max_drawdown: float, annualized_vol: float) -> float:
@@ -92,8 +126,9 @@ def max_drawdown(values: list[float]) -> float:
 
 
 class PerformanceTracker:
-    def __init__(self, portfolio: PortfolioView) -> None:
+    def __init__(self, portfolio: PortfolioView, risk_free_rate: float = 0.0) -> None:
         self._portfolio = portfolio
+        self._risk_free_rate = risk_free_rate
         self._mark_to_market_history: list[tuple[datetime, float]] = []
         self._open_lots: dict[Ticker, _OpenLot] = {}
         self._trades: list[_Trade] = []
@@ -199,15 +234,23 @@ class PerformanceTracker:
             annualized_vol = (
                 statistics.stdev(returns) * periods_per_year**0.5 if len(returns) > 1 else 0.0
             )
+            sharpe = sharpe_ratio(returns, periods_per_year, self._risk_free_rate)
         else:
+            # Every observation lands on the same calendar day, so there is no
+            # elapsed time to annualize over and no observed return frequency
+            # to scale by. Computing a Sharpe here would mean assuming a
+            # frequency the data does not have, and it would then sit beside a
+            # zeroed annualized_return and annualized_vol as an incoherent
+            # triple. All three report nothing together.
             annualized_return = 0.0
             annualized_vol = 0.0
+            sharpe = 0.0
 
         return PerformanceMetrics(
             total_return=total_return,
             annualized_return=annualized_return,
             annualized_vol=annualized_vol,
-            sharpe=sharpe_ratio(annualized_return, annualized_vol),
+            sharpe=sharpe,
             max_drawdown=max_drawdown(values),
             drawdown_to_vol=drawdown_to_vol_ratio(max_drawdown(values), annualized_vol),
         )
@@ -234,7 +277,11 @@ class PerformanceTracker:
 
         equity = [value for _, value in self._mark_to_market_history]
         avg_equity = statistics.mean(equity) if equity else 0.0
-        turnover = self._traded_notional / avg_equity if avg_equity else 0.0
+        timestamps = [timestamp for timestamp, _ in self._mark_to_market_history]
+        years = (timestamps[-1] - timestamps[0]).days / 365.25 if len(timestamps) > 1 else 0.0
+        annual_turnover = (
+            self._traded_notional / avg_equity / years if avg_equity and years > 0 else 0.0
+        )
 
         return TradeMetrics(
             num_trades=len(self._trades),
@@ -245,12 +292,18 @@ class PerformanceTracker:
             payoff_factor=payoff_factor,
             cpc_index=cpc_index,
             time_in_market=time_in_market,
-            turnover=turnover,
+            annual_turnover=annual_turnover,
         )
 
 
 def monthly_returns_table(history: Sequence[tuple[datetime, float]]) -> pd.DataFrame:
-    """Year x month return grid, with trailing Annual Return / Max DD / Sharpe columns."""
+    """Year x month return grid, with trailing Annual Return / Max DD / Sharpe columns.
+
+    The per-year Sharpe is computed excess-free (``risk_free_rate=0.0``): a
+    single year's worth of risk-free rate isn't threaded through this table,
+    so it will not match the headline, risk-free-adjusted Sharpe reported
+    elsewhere.
+    """
     if len(history) < 2:
         return pd.DataFrame()
 
@@ -283,14 +336,9 @@ def monthly_returns_table(history: Sequence[tuple[datetime, float]]) -> pd.DataF
             continue
         year_returns = [year_values[i] / year_values[i - 1] - 1 for i in range(1, len(year_values))]
         annual_return = year_values[-1] / year_values[0] - 1
-        annual_vol = (
-            statistics.stdev(year_returns) * TRADING_DAYS_PER_YEAR**0.5
-            if len(year_returns) > 1
-            else 0.0
-        )
         annual_returns.append(annual_return)
         max_drawdowns.append(max_drawdown(year_values))
-        sharpes.append(sharpe_ratio(annual_return, annual_vol))
+        sharpes.append(sharpe_ratio(year_returns, TRADING_DAYS_PER_YEAR))
 
     pivot["Annual Return"] = annual_returns
     pivot["Max DD"] = max_drawdowns

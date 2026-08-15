@@ -10,7 +10,7 @@ from backtester.tracker.metrics import (
     monthly_returns_table,
     strategy_correlation_matrix,
 )
-from backtester.tracker.report import save_report
+from backtester.tracker.report import _turnover_caption, save_report
 
 TS = datetime(2024, 1, 1)
 
@@ -224,6 +224,114 @@ def test_cost_sweep_page_handles_a_ladder_that_never_crosses_zero(tmp_path: Path
             max_drawdown=-0.25,
             annual_turnover=688.0,
         ),
+    ]
+
+    path = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
+        cost_sweep=points,
+    )
+
+    assert path.exists()
+    assert path.stat().st_size > 0
+
+
+def test_cost_sweep_page_renders_with_several_rungs(tmp_path: Path) -> None:
+    """A wider ladder still renders, with a per-rung table beneath the chart."""
+    metrics, trade_metrics, histories, config = _sample_inputs()
+    points = [
+        CostPoint(0.0, 0.5, 0.241, 0.38, -0.272, 689.2),
+        CostPoint(0.25, 0.5, 0.045, 0.20, -0.290, 689.1),
+        CostPoint(0.5, 0.5, -0.120, -0.05, -0.318, 689.0),
+        CostPoint(1.0, 0.5, -0.376, -0.30, -0.409, 688.7),
+        CostPoint(2.0, 0.5, -0.686, -0.60, -0.700, 687.7),
+        CostPoint(5.0, 0.5, -0.960, -0.95, -0.961, 681.0),
+    ]
+
+    without = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
+    )
+    with_sweep = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
+        cost_sweep=points,
+    )
+
+    assert with_sweep.stat().st_size > without.stat().st_size
+
+
+def test_cost_sweep_page_renders_with_a_single_rung(tmp_path: Path) -> None:
+    """A single-rung ladder is the degenerate range case: min == max, so the
+    turnover caption must render one number, not a "689-689x" range."""
+    metrics, trade_metrics, histories, config = _sample_inputs()
+    points = [
+        CostPoint(0.0, 0.5, 0.24, 0.38, -0.27, 689.2),
+    ]
+
+    path = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
+        cost_sweep=points,
+    )
+
+    assert path.exists()
+    assert path.stat().st_size > 0
+
+
+def test_turnover_caption_reports_the_real_range() -> None:
+    points = [
+        CostPoint(0.0, 0.5, 0.241, 0.38, -0.272, 689.2),
+        CostPoint(1.0, 0.5, -0.376, -0.30, -0.409, 688.7),
+        CostPoint(5.0, 0.5, -0.960, -0.95, -0.961, 681.0),
+    ]
+
+    caption = _turnover_caption(points)
+
+    assert "681" in caption
+    assert "689" in caption
+    assert "-" in caption
+
+
+def test_turnover_caption_collapses_to_one_figure_when_rounded_equal() -> None:
+    points = [
+        CostPoint(0.0, 0.5, 0.24, 0.38, -0.27, 689.04),
+        CostPoint(1.0, 0.5, -0.12, -0.09, -0.32, 689.02),
+    ]
+
+    caption = _turnover_caption(points)
+
+    assert "689" in caption
+    assert "-" not in caption
+
+
+def test_cost_sweep_page_renders_when_turnover_is_constant(tmp_path: Path) -> None:
+    """All rungs sharing a turnover value is another degenerate-range case."""
+    metrics, trade_metrics, histories, config = _sample_inputs()
+    points = [
+        CostPoint(0.0, 0.5, 0.24, 0.38, -0.27, 689.0),
+        CostPoint(1.0, 0.5, -0.12, -0.09, -0.32, 689.0),
+        CostPoint(2.0, 0.5, -0.40, -0.30, -0.45, 689.0),
     ]
 
     path = save_report(
