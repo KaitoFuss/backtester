@@ -27,8 +27,7 @@ def mean_and_stdev(values: Sequence[float]) -> tuple[float, float]:
         raise ValueError("mean_and_stdev requires at least two values")
 
     mean = math.fsum(values) / count
-    # max(..., 0.0) guards the one way this can fail: for a near-constant
-    # series the summed squared deviations can land marginally below zero
-    # through cancellation, and sqrt() of that is nan.
-    variance = max(math.fsum((value - mean) ** 2 for value in values) / (count - 1), 0.0)
+    # Each term is a square (value - mean)**2, so the sum is non-negative by construction.
+    # The cancellation hazard belongs to one-pass and incremental forms this function avoids.
+    variance = math.fsum((value - mean) ** 2 for value in values) / (count - 1)
     return mean, math.sqrt(variance)
