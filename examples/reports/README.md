@@ -9,11 +9,15 @@ Both runs charge costs their config ships with: **1.0 bp half-spread per fill
 (`cost_bps`) plus 0.5 bp commission (`commission_bps`)**. Every number below
 is after those costs.
 
-Both configs carry `drift_band: 0.005` — a 50 bp rebalancing no-trade band —
-but only to keep the two structurally comparable. `build_portfolio` passes it
-to `ScoreProportionalPortfolio` alone. So it is live for Score Scaling
-Neutral, inert dead config for Vol Sized, whose `inverse_vol` model never
-resizes a held position and has nothing to band.
+Score Scaling Neutral's config carries `drift_band: 0.005` — a 50 bp
+rebalancing no-trade band, live because `ScoreProportionalPortfolio`
+retrades a target delta every bar. Vol Sized's config omits it: its
+`inverse_vol` model never resizes a held position, so there is nothing to
+band. Vol Sized's config instead carries `stop_loss_pct` / `take_profit_pct`
+/ `max_holding_days` — entry-referenced risk exits that pair with band
+trading's flat→open→flat lifecycle but would just be re-entered next bar
+under continuous rebalancing, so Score Scaling Neutral's config leaves them
+unset.
 
 | | Config | Portfolio model | Total return | Sharpe | Max DD | Annual turnover | Breakeven |
 |---|---|---|---|---|---|---|---|
@@ -32,32 +36,36 @@ that same annualized figure.
 
 ## What the cost curve shows
 
-This is the finding. It is not a flattering one.
+With no costs charged, Score Scaling Neutral returns **+74.9% at a Sharpe of
+0.32**. It rebalances to its exact target weights every bar and turns over
+roughly 689x its equity per year — including with the config's 50 bp
+`drift_band` no-trade region live (see below), which does not materially
+reduce this turnover. At that turnover level, the frictionless result sits
+entirely inside the cost term.
 
-Run Score Scaling Neutral with no costs at all and it returns **+74.9% at a
-Sharpe of 0.32** — exactly why a backtest without a cost model is worthless.
-That strategy rebalances to its exact target weights every bar and turns over
-roughly 689x its equity per year. At that turnover the entire frictionless
-result sits *inside* the cost term.
+Breakeven half-spread is the relevant figure: holding the shipped 0.5 bp
+commission fixed and sweeping `cost_bps`, Sharpe crosses zero at **0.19 bp**,
+roughly **0.7 bp of total cost per fill**. That is under a cent on a $100
+ETF, and below typical ETF bid-ask spreads before commission, borrow, or
+market impact. At this turnover, the frictionless return is a function of
+the zero-cost assumption rather than an edge that survives realistic
+trading costs.
 
-The number that matters is breakeven half-spread: hold the shipped 0.5 bp
-commission fixed, sweep `cost_bps`, and Sharpe crosses zero at **0.19 bp** —
-about **0.7 bp of total cost per fill**. Under a cent on a $100 ETF is the
-whole edge. Real ETF spreads are wider than that before commission, borrow,
-or impact. Honest reading: this signal has no tradable edge at this
-rebalancing frequency, and the frictionless number was never a result. It was
-an artifact of not charging for trading.
+Vol Sized has no breakeven: it is unprofitable (-4.9% return, Sharpe -0.09)
+even with costs at zero, so there is no positive result for costs to erode.
+Its turnover is roughly 4x lower than the neutral book's, and its return
+degrades roughly 4x more slowly as costs increase.
 
-Vol Sized has no breakeven at all. It loses money (-4.9%, Sharpe -0.09)
-before any cost is charged, so there is nothing for costs to erode. It turns
-over ~4x less than the neutral book and degrades ~4x more gently, which is
-the only thing the comparison demonstrates.
-
-The 50 bp drift band barely moves Score Scaling Neutral, the only run that
-reads it: this signal's target weights churn by more than 50 bp of equity
-most bars, so the band rarely fires. A band wide enough to cut that turnover
-materially would also filter out the daily signal the strategy is built on.
-That trade-off is the real constraint, not a tuning oversight.
+Shipped 50 bp band barely moves it — most bars, target weight moves more than
+that, band rarely fires. Widen band to 75% of equity (`drift_band=0.75`),
+different story: turnover 689x → ~123x/yr, trades 14,998 → 1,277, result
+flips to +22.8% return, Sharpe +0.06. Not signal improving though — band that
+wide breaks the "rebuild whole book every bar" model this portfolio is,
+turns it into coarse threshold trading instead (near `InverseVolPortfolio`'s
+163x, which still loses money). Sharpe 0.06 also barely above zero. Read as
+turnover-suppression effect, not edge found — band value chosen after seeing
+it flip the number is exactly the kind of parameter search this report tries
+not to present as a result.
 
 Score Scaling Neutral is still the more interesting of the two structurally:
 it runs dollar-neutral (long and short legs sized to net to zero) and carries
