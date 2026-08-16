@@ -301,27 +301,6 @@ def _add_config_page(pdf: PdfPages, config: BacktestConfig) -> None:
     _save_page(pdf, fig)
 
 
-def _turnover_caption(points: Sequence[CostPoint]) -> str:
-    """State the ladder's annual-turnover range as a plain observation.
-
-    Turnover barely moves across the cost ladder — costs eat the book and
-    positions shrink, but traded notional shrinks right along with average
-    equity, so the ratio holds. That invariance is the mechanism behind the
-    whole page: the strategy does not trade less when trading costs more,
-    which is why it collapses on a fraction of a basis point. A column of
-    six near-identical numbers would invite a reader to hunt for a trend
-    that isn't there, so it is stated here as a sentence instead, with the
-    range computed from the points so it stays true if a future strategy's
-    turnover really does move."""
-    turnovers = [point.annual_turnover for point in points]
-    low, high = f"{min(turnovers):.0f}", f"{max(turnovers):.0f}"
-    figure = low if low == high else f"{low}-{high}"
-    return (
-        f"Annual turnover holds at {figure}x across the ladder: this strategy does not trade "
-        "less when trading costs more, which is why a fraction of a basis point is decisive."
-    )
-
-
 def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
     """Sharpe against trading cost, with the breakeven half-spread marked. The
     slope is the point: a signal whose Sharpe collapses over a fraction of a
@@ -393,15 +372,6 @@ def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
         cell_text,
         ["Half-spread (bp)", "Total return", "Sharpe", "Max drawdown"],
         cellLoc="center",
-    )
-
-    fig.text(
-        0.04,
-        0.075,
-        _turnover_caption(points),
-        color=_MUTED,
-        fontsize=9,
-        ha="left",
     )
 
     _save_page(pdf, fig)

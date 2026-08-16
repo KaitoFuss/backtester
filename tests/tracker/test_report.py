@@ -10,7 +10,7 @@ from backtester.tracker.metrics import (
     monthly_returns_table,
     strategy_correlation_matrix,
 )
-from backtester.tracker.report import _turnover_caption, save_report
+from backtester.tracker.report import save_report
 
 TS = datetime(2024, 1, 1)
 
@@ -297,32 +297,6 @@ def test_cost_sweep_page_renders_with_a_single_rung(tmp_path: Path) -> None:
 
     assert path.exists()
     assert path.stat().st_size > 0
-
-
-def test_turnover_caption_reports_the_real_range() -> None:
-    points = [
-        CostPoint(0.0, 0.5, 0.241, 0.38, -0.272, 689.2),
-        CostPoint(1.0, 0.5, -0.376, -0.30, -0.409, 688.7),
-        CostPoint(5.0, 0.5, -0.960, -0.95, -0.961, 681.0),
-    ]
-
-    caption = _turnover_caption(points)
-
-    assert "681" in caption
-    assert "689" in caption
-    assert "-" in caption
-
-
-def test_turnover_caption_collapses_to_one_figure_when_rounded_equal() -> None:
-    points = [
-        CostPoint(0.0, 0.5, 0.24, 0.38, -0.27, 689.04),
-        CostPoint(1.0, 0.5, -0.12, -0.09, -0.32, 689.02),
-    ]
-
-    caption = _turnover_caption(points)
-
-    assert "689" in caption
-    assert "-" not in caption
 
 
 def test_cost_sweep_page_renders_when_turnover_is_constant(tmp_path: Path) -> None:
