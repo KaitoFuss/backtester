@@ -93,17 +93,21 @@ with a different universe cannot leak into the current one.
     `sign(score) / trailing σ`, normalized so the batch of new opens exactly
     fills the gross still available under `max_gross`. Score gates and directs
     but never sizes — a score of 0.6 and a score of 3.0 open the same
-    position. Held positions are never resized (flat → open → flat). A
-    position closes when its score signed into the held direction falls below
-    `exit_threshold`.
+    position. Held positions are never resized (flat → open → flat). Under
+    its own signal logic, a position closes when its score signed into the
+    held direction falls below `exit_threshold` — independent of that,
+    `RiskManager` can force-exit on stop-loss/take-profit/max-holding, and
+    any open position is liquidated at run end.
   - `ScoreProportionalPortfolio` — **continuous rebalancing, sized by raw
     conviction**. Every bar it rebuilds the whole target book
     (`score / total abs score` into the available budget, no entry/exit gate —
     any nonzero score carries some weight) and emits the *delta* against what
     is held, so
     a weight always reflects today's score rather than the score on the bar
-    the position opened. A reversal is conviction the other way, so the
-    position crosses zero in a single order instead of closing.
+    the position opened. Under its own signal logic, a reversal is conviction
+    the other way, so the position crosses zero in a single order instead of
+    closing — independent of that, `RiskManager` and end-of-run liquidation
+    still apply on the strategy leg.
     `dollar_neutral=True` demeans every scored ticker (an exact `0.0` is a
     real reading, not a placeholder, so it takes part too) so signed weights
     sum to zero. `config.drift_band` is the no-trade region around the target:
@@ -116,7 +120,10 @@ with a different universe cannot leak into the current one.
     cap (4% of equity at `drift_band: 0.005` over 8 tickers).
   - `EqualWeightPortfolio` — deliberately the dumbest. A non-zero-scored
     ticker while flat takes an equal share of remaining gross, then is never
-    resized or closed. Exists so `BuyAndHoldStrategy` stays a genuine
+    resized or closed by its own signal logic — `runner.py` wires no
+    `RiskManager` onto the benchmark leg either, so in practice only
+    `Engine`'s end-of-run liquidation ever closes it. Exists so
+    `BuyAndHoldStrategy` stays a genuine
     buy-and-hold reference rather than inheriting whatever the strategy
     portfolios do.
 
