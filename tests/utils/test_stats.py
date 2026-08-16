@@ -3,7 +3,7 @@ import statistics
 
 import pytest
 
-from backtester.stats import mean_and_stdev
+from backtester.utils.stats import mean_and_stdev
 
 
 def test_matches_statistics_on_a_known_sample() -> None:

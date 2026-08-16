@@ -18,7 +18,7 @@ import pandas as pd
 
 from backtester.core.engine import PortfolioView
 from backtester.core.events import FillEvent, MarketEvent, Ticker
-from backtester.stats import mean_and_stdev
+from backtester.utils.stats import mean_and_stdev
 
 logger = logging.getLogger(__name__)
 
