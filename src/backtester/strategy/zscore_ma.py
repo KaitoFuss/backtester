@@ -3,7 +3,7 @@ import math
 from collections import deque
 
 from backtester.core.events import MarketEvent, SignalEvent, Ticker
-from backtester.stats import mean_and_stdev
+from backtester.utils.stats import mean_and_stdev
 
 logger = logging.getLogger(__name__)
 

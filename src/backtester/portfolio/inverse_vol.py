@@ -11,8 +11,8 @@ from backtester.core.engine import PriceSource
 from backtester.core.events import OrderEvent, Position, SignalEvent, Ticker
 from backtester.core.trade_log import log_trade
 from backtester.portfolio.base import BasePortfolio, existing_gross
-from backtester.stats import mean_and_stdev
 from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
+from backtester.utils.stats import mean_and_stdev
 
 logger = logging.getLogger(__name__)
 

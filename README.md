@@ -19,11 +19,16 @@ Every component (`DataHandler`, `Strategy`, `Portfolio`, `ExecutionHandler`,
 `RiskManager`, `Tracker`) is structural `Protocol`. New strategies and
 portfolio models plug in without touching engine. Ships three
 portfolio-construction models (risk-sized band trading, continuous
-conviction-weighted rebalancing, dumb equal-weight benchmark),
-entry-referenced stop-loss/take-profit/max-holding risk checks, cost-aware
-execution (per-fill half-spread and commission, plus rebalancing drift band
-to suppress churn), cost sweep reporting breakeven half-spread, multi-page
-PDF report (equity curve, drawdown, trade stats, monthly returns, return
+conviction-weighted rebalancing, dumb equal-weight benchmark) — an order
+means something different under each: band trading opens a position once and
+holds it untouched until an exit gate fires, rebalancing retrades a target
+delta every bar. Only band trading pairs with the entry-referenced
+stop-loss/take-profit/max-holding risk checks shipped here; a rebalancer
+would just re-enter a forced exit on the next bar, so the sample configs
+enable those checks for band trading alone. Also ships cost-aware execution
+(per-fill half-spread and commission, plus rebalancing drift band to
+suppress churn), cost sweep reporting breakeven half-spread, multi-page PDF
+report (equity curve, drawdown, trade stats, monthly returns, return
 correlation, cost sensitivity).
 
 Full design writeup: [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -38,11 +43,10 @@ benchmark. Same 8-ETF universe, 2015–2025, charged 1.0 bp half-spread and
 against benchmark's +83.6% / 0.52. Both Sharpes are excess-return figures
 against a 2% annualized risk-free rate (`config.risk_free_rate`).
 
-Costs off, it returns +74.9% at 0.32 — whole result lives inside cost term.
+Costs off, it returns **+74.9% at 0.32** — whole result lives inside cost term.
 It rebalances every bar, turns over ~689x its equity a year (gross traded
 notional, every fill counted once), and its Sharpe crosses zero at a
-**0.19 bp** half-spread on top of shipped commission. That fragility is the
-interesting output, not the return. Both committed sample reports, full cost
+**0.19 bp** half-spread on top of shipped commission. Both committed sample reports, full cost
 curve, and regeneration steps: [`examples/reports/`](examples/reports/).
 
 ## Quickstart
