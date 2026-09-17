@@ -3,6 +3,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,10 +15,24 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 
-from backtester.config import BacktestConfig
 from backtester.tracker.cost_curve import CostPoint, breakeven_cost
 from backtester.tracker.metrics import PerformanceMetrics, TradeMetrics
 from backtester.tracker.plotting import draw_equity_curve
+
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
+
+    class ReportConfig(DataclassInstance, Protocol):
+        """Structural type for what the config page actually needs: a dataclass
+        instance (so ``asdict()`` works) with a ``name`` for the filename/title.
+        ``_typeshed.DataclassInstance`` only exists for type checkers, so this
+        whole alias is defined under ``TYPE_CHECKING`` and erased at runtime."""
+
+        @property
+        def name(self) -> str: ...
+
+else:
+    ReportConfig = object
 
 _A4_LANDSCAPE = (11.69, 8.27)
 
@@ -293,7 +308,7 @@ def _format_config_value(value: object) -> str:
     return f"{value:,}"
 
 
-def _add_config_page(pdf: PdfPages, config: BacktestConfig) -> None:
+def _add_config_page(pdf: PdfPages, config: ReportConfig) -> None:
     fig = _new_page("Backtest Configuration")
     ax = fig.add_axes((0.06, 0.07, 0.88, 0.79))
     rows = [[key, _format_config_value(value)] for key, value in asdict(config).items()]
@@ -416,7 +431,7 @@ def save_report(
     correlation: pd.DataFrame,
     *,
     cost_sweep: Sequence[CostPoint] | None = None,
-    config: BacktestConfig,
+    config: ReportConfig,
 ) -> Path:
     path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
     with PdfPages(path) as pdf:

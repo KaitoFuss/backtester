@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -323,6 +323,37 @@ def test_turnover_caption_collapses_to_one_figure_when_rounded_equal() -> None:
 
     assert "689" in caption
     assert "-" not in caption
+
+
+@dataclass(frozen=True)
+class _MinimalConfig:
+    """Only ``name`` plus a field ``BacktestConfig`` has no home for, proving
+    ``save_report`` no longer requires the concrete ``BacktestConfig`` class
+    and does not silently drop a caller's own strategy-specific fields."""
+
+    name: str
+    target_vol: float
+
+
+def test_save_report_accepts_a_minimal_custom_config_with_a_foreign_field(
+    tmp_path: Path,
+) -> None:
+    metrics, trade_metrics, histories, _ = _sample_inputs()
+    config = _MinimalConfig(name="Macd Benchmark", target_vol=0.1)
+
+    path = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
+    )
+
+    assert path == tmp_path / "macd_benchmark_report_1.pdf"
+    assert path.exists()
+    assert path.stat().st_size > 0
 
 
 def test_cost_sweep_page_renders_when_turnover_is_constant(tmp_path: Path) -> None:

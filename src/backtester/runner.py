@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from backtester.config import BacktestConfig
+from backtester.config import BacktestConfig, EngineConfig
 from backtester.core.engine import Engine, Portfolio, PriceSource, RiskManager, Strategy
 from backtester.data.frame_market_data import FrameMarketData
 from backtester.execution.cost_aware import CostAwareExecutionHandler
@@ -36,7 +36,7 @@ def run_backtest(
     strategy: Strategy,
     portfolio_factory: PortfolioFactory,
     risk_manager_factory: RiskManagerFactory,
-    config: BacktestConfig,
+    config: EngineConfig,
 ) -> PerformanceTracker:
     market_data = FrameMarketData(Path(config.data), tickers=config.tickers)
     portfolio = portfolio_factory(market_data)
