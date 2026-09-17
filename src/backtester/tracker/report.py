@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
@@ -25,14 +27,12 @@ if TYPE_CHECKING:
     class ReportConfig(DataclassInstance, Protocol):
         """Structural type for what the config page actually needs: a dataclass
         instance (so ``asdict()`` works) with a ``name`` for the filename/title.
-        ``_typeshed.DataclassInstance`` only exists for type checkers, so this
-        whole alias is defined under ``TYPE_CHECKING`` and erased at runtime."""
+        Only referenced from deferred (``from __future__ import annotations``)
+        signatures, so it never needs a runtime stand-in."""
 
         @property
         def name(self) -> str: ...
 
-else:
-    ReportConfig = object
 
 _A4_LANDSCAPE = (11.69, 8.27)
 
