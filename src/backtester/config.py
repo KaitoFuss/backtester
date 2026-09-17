@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self
+from typing import Protocol, Self
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,29 @@ class FetchDataConfig:
     @classmethod
     def from_json(cls, path: Path) -> Self:
         return cls(**json.loads(path.read_text()))
+
+
+class EngineConfig(Protocol):
+    """Structural type for what ``run_backtest()`` actually reads off a config.
+
+    ``BacktestConfig`` satisfies this without any changes, but so does any
+    other config dataclass a caller already has — letting them pass their own
+    config straight into ``run_backtest()`` instead of lossily adapting it
+    into a ``BacktestConfig`` first."""
+
+    # Declared as read-only properties, not plain attributes: a plain attribute
+    # in a Protocol also demands a setter, which a frozen dataclass (like
+    # ``BacktestConfig``) can never satisfy.
+    @property
+    def data(self) -> str: ...
+    @property
+    def tickers(self) -> list[str] | None: ...
+    @property
+    def cost_bps(self) -> float: ...
+    @property
+    def commission_bps(self) -> float: ...
+    @property
+    def risk_free_rate(self) -> float: ...
 
 
 @dataclass(frozen=True)

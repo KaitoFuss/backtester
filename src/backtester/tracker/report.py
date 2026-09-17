@@ -3,6 +3,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Protocol, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,10 +15,19 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 
-from backtester.config import BacktestConfig
 from backtester.tracker.cost_curve import CostPoint, breakeven_cost
 from backtester.tracker.metrics import PerformanceMetrics, TradeMetrics
 from backtester.tracker.plotting import draw_equity_curve
+
+
+class ReportConfig(Protocol):
+    """Structural type for what the config page needs: a ``name`` for the
+    filename/title, plus dataclass-ness so ``asdict()`` can flatten it into
+    rows (enforced at the ``asdict()`` call site, not here - see below)."""
+
+    @property
+    def name(self) -> str: ...
+
 
 _A4_LANDSCAPE = (11.69, 8.27)
 
@@ -293,10 +303,13 @@ def _format_config_value(value: object) -> str:
     return f"{value:,}"
 
 
-def _add_config_page(pdf: PdfPages, config: BacktestConfig) -> None:
+def _add_config_page(pdf: PdfPages, config: ReportConfig) -> None:
     fig = _new_page("Backtest Configuration")
     ax = fig.add_axes((0.06, 0.07, 0.88, 0.79))
-    rows = [[key, _format_config_value(value)] for key, value in asdict(config).items()]
+    # cast, not a DataclassInstance-typed protocol: asdict() raises its own
+    # TypeError at runtime if config isn't actually a dataclass, so mypy's
+    # static check here would be redundant weight on the protocol itself.
+    rows = [[key, _format_config_value(value)] for key, value in asdict(cast(Any, config)).items()]
     _style_table(ax, rows, ["Field", "Value"], cellLoc="left", colWidths=[0.35, 0.65])
     _save_page(pdf, fig)
 
@@ -386,7 +399,7 @@ def save_report(
     correlation: pd.DataFrame,
     *,
     cost_sweep: Sequence[CostPoint] | None = None,
-    config: BacktestConfig,
+    config: ReportConfig,
 ) -> Path:
     path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
     with PdfPages(path) as pdf:
