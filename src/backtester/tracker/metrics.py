@@ -134,6 +134,8 @@ class PerformanceTracker:
         self._trades: list[_Trade] = []
         self._bars_in_market = 0
         self._traded_notional = 0.0
+        self._weights_history: list[tuple[datetime, dict[Ticker, float]]] = []
+        self._last_close: dict[Ticker, float] = {}
 
     def track_market(self, event: MarketEvent) -> None:
         # A bar with no prices for any traded ticker is outside the data window
@@ -146,10 +148,30 @@ class PerformanceTracker:
             logger.debug("%s: no prices in bar, skipping equity mark", event.timestamp)
             return
         equity = self._portfolio.mark_to_market()
+        # Weights first: they read the *previous* equity mark and closes.
+        self._weights_history.append((event.timestamp, self._held_weights()))
         self._mark_to_market_history.append((event.timestamp, equity))
+        self._last_close.update({ticker: bar.close for ticker, bar in event.bars.items()})
         logger.debug("%s: equity=%.2f", event.timestamp, equity)
         if self._open_lots:
             self._bars_in_market += 1
+
+    def _held_weights(self) -> dict[Ticker, float]:
+        """Weights of the holdings that earn the bar being marked: quantities
+        from the lot ledger (every fill up to the previous bar, since the engine
+        tracks a bar before its strategy trades on it), valued at the previous
+        close over the previous equity mark. Empty on the first mark. A ticker
+        missing from the previous bar keeps its last seen close."""
+        if not self._mark_to_market_history:
+            return {}
+        previous_equity = self._mark_to_market_history[-1][1]
+        if previous_equity <= 0:
+            return {}
+        return {
+            ticker: lot.signed_qty * self._last_close[ticker] / previous_equity
+            for ticker, lot in self._open_lots.items()
+            if ticker in self._last_close
+        }
 
     def track_fill(self, event: FillEvent) -> None:
         # A self-contained running-lot ledger, built only from the fill stream,
@@ -213,6 +235,10 @@ class PerformanceTracker:
     @property
     def mark_to_market_history(self) -> list[tuple[datetime, float]]:
         return list(self._mark_to_market_history)
+
+    @property
+    def weights_history(self) -> list[tuple[datetime, dict[Ticker, float]]]:
+        return [(timestamp, dict(weights)) for timestamp, weights in self._weights_history]
 
     def metrics(self) -> PerformanceMetrics:
         if len(self._mark_to_market_history) < 2:

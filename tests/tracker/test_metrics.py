@@ -456,3 +456,58 @@ def test_turnover_is_zero_without_a_measurable_span() -> None:
 
     assert tracker.trade_metrics().num_trades == 1
     assert tracker.trade_metrics().annual_turnover == 0.0
+
+
+def test_weights_history_records_holdings_that_earned_each_bar() -> None:
+    """Entry t = quantities held from close t-1 to close t, valued at close
+    t-1 over the equity mark of t-1. A fill on bar 0 shows up from bar 1."""
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0, 1_000.0, 1_100.0]))
+
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars={"AAPL": Bar(close=100.0)}))
+    tracker.track_fill(
+        FillEvent(timestamp=_ts(0), ticker="AAPL", quantity=5, direction="BUY", fill_price=100.0)
+    )
+    tracker.track_market(MarketEvent(timestamp=_ts(1), bars={"AAPL": Bar(close=120.0)}))
+    tracker.track_market(MarketEvent(timestamp=_ts(2), bars={"AAPL": Bar(close=130.0)}))
+
+    assert tracker.weights_history == [
+        (_ts(0), {}),
+        (_ts(1), {"AAPL": 0.5}),
+        (_ts(2), {"AAPL": 0.6}),
+    ]
+
+
+def test_weights_history_signs_short_positions_negative() -> None:
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0, 1_000.0]))
+
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars={"AAPL": Bar(close=100.0)}))
+    tracker.track_fill(
+        FillEvent(timestamp=_ts(0), ticker="AAPL", quantity=2, direction="SELL", fill_price=100.0)
+    )
+    tracker.track_market(MarketEvent(timestamp=_ts(1), bars={"AAPL": Bar(close=90.0)}))
+
+    assert tracker.weights_history[-1] == (_ts(1), {"AAPL": -0.2})
+
+
+def test_weights_history_values_a_missing_ticker_at_its_last_close() -> None:
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0, 1_000.0, 1_000.0]))
+
+    tracker.track_market(
+        MarketEvent(timestamp=_ts(0), bars={"AAPL": Bar(close=100.0), "MSFT": Bar(close=50.0)})
+    )
+    tracker.track_fill(
+        FillEvent(timestamp=_ts(0), ticker="MSFT", quantity=4, direction="BUY", fill_price=50.0)
+    )
+    tracker.track_market(MarketEvent(timestamp=_ts(1), bars={"AAPL": Bar(close=101.0)}))
+    tracker.track_market(MarketEvent(timestamp=_ts(2), bars={"AAPL": Bar(close=102.0)}))
+
+    assert tracker.weights_history[-1] == (_ts(2), {"MSFT": 0.2})
+
+
+def test_weights_history_skips_bars_without_prices() -> None:
+    tracker = PerformanceTracker(portfolio=FakePortfolioView([1_000.0]))
+
+    tracker.track_market(MarketEvent(timestamp=_ts(0), bars={}))
+    tracker.track_market(MarketEvent(timestamp=_ts(1), bars=LIVE_BARS))
+
+    assert [ts for ts, _ in tracker.weights_history] == [_ts(1)]
