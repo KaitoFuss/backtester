@@ -29,17 +29,27 @@ class ReportConfig(Protocol):
     def name(self) -> str: ...
 
 
+class ReportPage(Protocol):
+    """A caller-supplied page (or pages) for ``save_report``. ``render`` draws
+    with the public helpers in this module (``new_page``, ``style_table``,
+    ``draw_heatmap``, the theme colors) and writes with ``save_page``. It may
+    write nothing when it has nothing to show. This keeps ``backtester``
+    agnostic of what downstream reports add (e.g. factor attribution)."""
+
+    def render(self, pdf: PdfPages) -> None: ...
+
+
 _A4_LANDSCAPE = (11.69, 8.27)
 
-_SURFACE = "#fcfcfb"
-_INK = "#0b0b0b"
-_MUTED = "#898781"
-_GRID = "#e1e0d9"
+SURFACE = "#fcfcfb"
+INK = "#0b0b0b"
+MUTED = "#898781"
+GRID = "#e1e0d9"
 _GOOD_TINT = "#e3f5e3"
 _CRITICAL_TINT = "#fbe3e3"
-_NEGATIVE = "#e34948"
+NEGATIVE = "#e34948"
 
-_DIVERGING = LinearSegmentedColormap.from_list("diverging", [_NEGATIVE, "#f0efec", "#2a78d6"])
+_DIVERGING = LinearSegmentedColormap.from_list("diverging", [NEGATIVE, "#f0efec", "#2a78d6"])
 
 _SUMMARY_COLUMNS = ("Annual Return", "Max DD", "Sharpe")
 _SUMMARY_FORMATS = {"Annual Return": "{:.1%}", "Max DD": "{:.1%}", "Sharpe": "{:.2f}"}
@@ -83,18 +93,18 @@ def _next_report_path(output_dir: Path, stem: str = "report") -> Path:
     return output_dir / f"{stem}_{max(existing, default=0) + 1}.pdf"
 
 
-def _new_page(title: str) -> Figure:
-    fig = plt.figure(figsize=_A4_LANDSCAPE, facecolor=_SURFACE)
-    fig.suptitle(title, color=_INK, fontsize=15, x=0.04, y=0.955, ha="left")
+def new_page(title: str) -> Figure:
+    fig = plt.figure(figsize=_A4_LANDSCAPE, facecolor=SURFACE)
+    fig.suptitle(title, color=INK, fontsize=15, x=0.04, y=0.955, ha="left")
     return fig
 
 
-def _save_page(pdf: PdfPages, fig: Figure) -> None:
-    pdf.savefig(fig, facecolor=_SURFACE)  # type: ignore[no-untyped-call]
+def save_page(pdf: PdfPages, fig: Figure) -> None:
+    pdf.savefig(fig, facecolor=SURFACE)  # type: ignore[no-untyped-call]
     plt.close(fig)
 
 
-def _style_table(
+def style_table(
     ax: Axes, cell_text: list[list[str]], col_labels: list[str], **kwargs: object
 ) -> None:
     ax.set_axis_off()
@@ -107,20 +117,20 @@ def _style_table(
     table.auto_set_font_size(False)
     table.set_fontsize(8.5)
     for (row, _col), cell in table.get_celld().items():
-        cell.set_edgecolor(_GRID)
+        cell.set_edgecolor(GRID)
         cell.set_linewidth(0.6)
         if row == 0:
-            cell.set_facecolor(_SURFACE)
-            cell.set_text_props(color=_INK, weight="bold")
+            cell.set_facecolor(SURFACE)
+            cell.set_text_props(color=INK, weight="bold")
         elif cell.get_facecolor() == (1.0, 1.0, 1.0, 1.0):
-            cell.set_facecolor(_SURFACE)
+            cell.set_facecolor(SURFACE)
 
 
 def _row_colors(
     values: Mapping[str, float], labels: list[str], higher_is_better: bool | None
 ) -> list[str]:
     if higher_is_better is None or len(labels) < 2 or len(set(values.values())) < 2:
-        return [_SURFACE] * len(labels)
+        return [SURFACE] * len(labels)
     best = (
         max(values, key=lambda label: values[label])
         if higher_is_better
@@ -139,7 +149,7 @@ def _add_overview_page(
     png_path: Path | None = None,
 ) -> None:
     labels = list(metrics)
-    fig = _new_page(f"Performance Overview - {name}")
+    fig = new_page(f"Performance Overview - {name}")
     grid = fig.add_gridspec(
         1, 2, width_ratios=[1.4, 1], left=0.06, right=0.975, top=0.87, bottom=0.06, wspace=0.22
     )
@@ -155,15 +165,13 @@ def _add_overview_page(
         for display, field, fmt, higher_is_better in rows:
             values = {label: getattr(source[label], field) for label in labels}
             cell_text.append([display, *[fmt.format(values[label]) for label in labels]])
-            cell_colors.append([_SURFACE, *_row_colors(values, labels, higher_is_better)])
+            cell_colors.append([SURFACE, *_row_colors(values, labels, higher_is_better)])
 
     # The correlation matrix shares this page rather than owning one: at two or three
     # strategies it is a handful of cells, and a page of its own is mostly blank.
     right = grid[0, 1].subgridspec(2, 1, height_ratios=[3.4, 1], hspace=0.22)
     ax_table = fig.add_subplot(right[0])
-    _style_table(
-        ax_table, cell_text, ["Metric", *labels], cellColours=cell_colors, cellLoc="center"
-    )
+    style_table(ax_table, cell_text, ["Metric", *labels], cellColours=cell_colors, cellLoc="center")
 
     ax_correlation = fig.add_subplot(right[1])
     if correlation.empty:
@@ -171,7 +179,7 @@ def _add_overview_page(
     else:
         values_2d = correlation.to_numpy(dtype=float)
         correlation_labels = [str(index) for index in correlation.index]
-        _draw_heatmap(
+        draw_heatmap(
             ax_correlation,
             values_2d,
             values_2d,
@@ -180,12 +188,12 @@ def _add_overview_page(
             ["{:.2f}"] * len(correlation),
             annotation_fontsize=9,
         )
-        ax_correlation.set_title("Return Correlation", color=_INK, fontsize=11, loc="left", pad=8)
+        ax_correlation.set_title("Return Correlation", color=INK, fontsize=11, loc="left", pad=8)
 
     # The same figure doubles as the repo's hero image, so a clone can reproduce it.
     if png_path is not None:
-        fig.savefig(png_path, facecolor=_SURFACE, dpi=150, bbox_inches="tight")
-    _save_page(pdf, fig)
+        fig.savefig(png_path, facecolor=SURFACE, dpi=150, bbox_inches="tight")
+    save_page(pdf, fig)
 
 
 def _normalize_overall(data: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
@@ -202,7 +210,7 @@ def _normalize_per_column(data: npt.NDArray[np.float64]) -> npt.NDArray[np.float
     return normalized
 
 
-def _draw_heatmap(
+def draw_heatmap(
     ax: Axes,
     values: npt.NDArray[np.float64],
     normalized: npt.NDArray[np.float64],
@@ -214,12 +222,12 @@ def _draw_heatmap(
     annotation_fontsize: float = 7.5,
 ) -> None:
     # Months with no data must read as "no bar", not as a zero-return cell.
-    ax.set_facecolor(_SURFACE)
+    ax.set_facecolor(SURFACE)
     ax.imshow(normalized, cmap=_DIVERGING, vmin=-1, vmax=1, aspect="auto")
-    ax.set_xticks(range(len(col_labels)), labels=col_labels, color=_MUTED, fontsize=tick_fontsize)
+    ax.set_xticks(range(len(col_labels)), labels=col_labels, color=MUTED, fontsize=tick_fontsize)
     if show_row_labels:
         ax.set_yticks(
-            range(len(row_labels)), labels=row_labels, color=_MUTED, fontsize=tick_fontsize
+            range(len(row_labels)), labels=row_labels, color=MUTED, fontsize=tick_fontsize
         )
     else:
         ax.set_yticks([])
@@ -238,7 +246,7 @@ def _draw_heatmap(
                 formats[col].format(value),
                 ha="center",
                 va="center",
-                color=_INK,
+                color=INK,
                 fontsize=annotation_fontsize,
             )
 
@@ -248,7 +256,7 @@ def _add_monthly_page(pdf: PdfPages, monthly_tables: Mapping[str, pd.DataFrame])
     if not tables:
         return
 
-    fig = _new_page("Monthly Returns")
+    fig = new_page("Monthly Returns")
     outer = fig.add_gridspec(
         len(tables),
         1,
@@ -270,7 +278,7 @@ def _add_monthly_page(pdf: PdfPages, monthly_tables: Mapping[str, pd.DataFrame])
         )
         ax_months = fig.add_subplot(inner[0, 0])
         month_values = table[month_columns].to_numpy(dtype=float)
-        _draw_heatmap(
+        draw_heatmap(
             ax_months,
             month_values,
             _normalize_overall(month_values),
@@ -278,13 +286,13 @@ def _add_monthly_page(pdf: PdfPages, monthly_tables: Mapping[str, pd.DataFrame])
             month_columns,
             ["{:.1%}"] * len(month_columns),
         )
-        ax_months.set_title(label, color=_INK, fontsize=11, loc="left", pad=8)
+        ax_months.set_title(label, color=INK, fontsize=11, loc="left", pad=8)
 
         # Own axes with per-column scaling: annual return / drawdown / Sharpe live on
         # different scales than a single month, and would swamp the monthly ramp.
         ax_summary = fig.add_subplot(inner[0, 1])
         summary_values = table[summary_columns].to_numpy(dtype=float)
-        _draw_heatmap(
+        draw_heatmap(
             ax_summary,
             summary_values,
             _normalize_per_column(summary_values),
@@ -294,7 +302,7 @@ def _add_monthly_page(pdf: PdfPages, monthly_tables: Mapping[str, pd.DataFrame])
             show_row_labels=False,
         )
 
-    _save_page(pdf, fig)
+    save_page(pdf, fig)
 
 
 def _format_config_value(value: object) -> str:
@@ -304,14 +312,14 @@ def _format_config_value(value: object) -> str:
 
 
 def _add_config_page(pdf: PdfPages, config: ReportConfig) -> None:
-    fig = _new_page("Backtest Configuration")
+    fig = new_page("Backtest Configuration")
     ax = fig.add_axes((0.06, 0.07, 0.88, 0.79))
     # cast, not a DataclassInstance-typed protocol: asdict() raises its own
     # TypeError at runtime if config isn't actually a dataclass, so mypy's
     # static check here would be redundant weight on the protocol itself.
     rows = [[key, _format_config_value(value)] for key, value in asdict(cast(Any, config)).items()]
-    _style_table(ax, rows, ["Field", "Value"], cellLoc="left", colWidths=[0.35, 0.65])
-    _save_page(pdf, fig)
+    style_table(ax, rows, ["Field", "Value"], cellLoc="left", colWidths=[0.35, 0.65])
+    save_page(pdf, fig)
 
 
 def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
@@ -326,45 +334,45 @@ def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
         return
 
     commission = points[0].commission_bps
-    fig = _new_page("Cost Sensitivity")
+    fig = new_page("Cost Sensitivity")
     fig.text(
         0.04,
         0.905,
         f"Sharpe vs half-spread per fill. Commission held fixed at {commission:.2f} bp "
         "per fill on every rung, so the whole curve already pays it.",
-        color=_MUTED,
+        color=MUTED,
         fontsize=9.5,
         ha="left",
     )
     ax = fig.add_axes((0.09, 0.42, 0.85, 0.42))
-    ax.set_facecolor(_SURFACE)
+    ax.set_facecolor(SURFACE)
 
     costs = [point.cost_bps for point in points]
     sharpes = [point.sharpe for point in points]
-    ax.plot(costs, sharpes, marker="o", color=_INK, linewidth=1.4, markersize=4)
-    ax.axhline(0.0, color=_MUTED, linewidth=0.8, linestyle="--")
+    ax.plot(costs, sharpes, marker="o", color=INK, linewidth=1.4, markersize=4)
+    ax.axhline(0.0, color=MUTED, linewidth=0.8, linestyle="--")
 
     breakeven = breakeven_cost(points)
     if breakeven is not None:
-        ax.axvline(breakeven, color=_NEGATIVE, linewidth=1.0)
+        ax.axvline(breakeven, color=NEGATIVE, linewidth=1.0)
         ax.annotate(
             f"breakeven ≈ {breakeven:.2f} bp half-spread\n"
             f"(+ {commission:.2f} bp commission held fixed)",
             xy=(breakeven, 0.0),
             xytext=(6, 10),
             textcoords="offset points",
-            color=_NEGATIVE,
+            color=NEGATIVE,
             fontsize=9,
         )
 
     ax.set_xlabel(
         f"half-spread per fill (bp), on top of a fixed {commission:.2f} bp commission",
-        color=_MUTED,
+        color=MUTED,
         fontsize=9,
     )
-    ax.set_ylabel("Sharpe", color=_MUTED, fontsize=9)
-    ax.tick_params(colors=_MUTED, labelsize=9, length=0)
-    ax.grid(True, color=_GRID, linewidth=0.6)
+    ax.set_ylabel("Sharpe", color=MUTED, fontsize=9)
+    ax.tick_params(colors=MUTED, labelsize=9, length=0)
+    ax.grid(True, color=GRID, linewidth=0.6)
     ax.set_axisbelow(True)
     for spine in ax.spines.values():
         spine.set_visible(False)
@@ -380,14 +388,14 @@ def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
         for point in ordered
     ]
     ax_table = fig.add_axes((0.09, 0.155, 0.85, 0.20))
-    _style_table(
+    style_table(
         ax_table,
         cell_text,
         ["Half-spread (bp)", "Total return", "Sharpe", "Max drawdown"],
         cellLoc="center",
     )
 
-    _save_page(pdf, fig)
+    save_page(pdf, fig)
 
 
 def save_report(
@@ -399,6 +407,7 @@ def save_report(
     correlation: pd.DataFrame,
     *,
     cost_sweep: Sequence[CostPoint] | None = None,
+    extra_pages: Sequence[ReportPage] = (),
     config: ReportConfig,
 ) -> Path:
     path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
@@ -415,5 +424,7 @@ def save_report(
         _add_monthly_page(pdf, monthly_tables)
         if cost_sweep is not None:
             _add_cost_sweep_page(pdf, cost_sweep)
+        for page in extra_pages:
+            page.render(pdf)
         _add_config_page(pdf, config)
     return path
