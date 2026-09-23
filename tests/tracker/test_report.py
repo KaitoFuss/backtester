@@ -2,7 +2,11 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pytest
+from matplotlib.backends.backend_pdf import PdfPages
+
 from backtester.config import BacktestConfig
+from backtester.tracker import report
 from backtester.tracker.cost_curve import CostPoint
 from backtester.tracker.metrics import (
     PerformanceMetrics,
@@ -10,7 +14,7 @@ from backtester.tracker.metrics import (
     monthly_returns_table,
     strategy_correlation_matrix,
 )
-from backtester.tracker.report import save_report
+from backtester.tracker.report import new_page, save_page, save_report
 
 TS = datetime(2024, 1, 1)
 
@@ -352,3 +356,56 @@ def test_cost_sweep_page_renders_when_turnover_is_constant(tmp_path: Path) -> No
 
     assert path.exists()
     assert path.stat().st_size > 0
+
+
+class _RecordingPage:
+    def __init__(self, calls: list[str]) -> None:
+        self._calls = calls
+
+    def render(self, pdf: PdfPages) -> None:
+        self._calls.append("extra")
+        save_page(pdf, new_page("Extra"))
+
+
+def test_extra_pages_render_before_the_config_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    metrics, trade_metrics, histories, config = _sample_inputs()
+    calls: list[str] = []
+    original = report._add_config_page
+
+    def _spy(pdf: PdfPages, config: report.ReportConfig) -> None:
+        calls.append("config")
+        original(pdf, config)
+
+    monkeypatch.setattr(report, "_add_config_page", _spy)
+
+    path = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
+        correlation=strategy_correlation_matrix(histories),
+        extra_pages=[_RecordingPage(calls), _RecordingPage(calls)],
+        config=config,
+    )
+
+    assert calls == ["extra", "extra", "config"]
+    assert path.stat().st_size > 0
+
+
+def test_public_page_helpers_and_colors_are_exported() -> None:
+    for name in (
+        "ReportPage",
+        "new_page",
+        "save_page",
+        "style_table",
+        "draw_heatmap",
+        "SURFACE",
+        "INK",
+        "MUTED",
+        "GRID",
+        "NEGATIVE",
+    ):
+        assert hasattr(report, name), name
