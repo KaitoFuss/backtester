@@ -1,4 +1,5 @@
 import re
+import textwrap
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
@@ -305,21 +306,179 @@ def _add_monthly_page(pdf: PdfPages, monthly_tables: Mapping[str, pd.DataFrame])
     save_page(pdf, fig)
 
 
+_TABLE_TOP = 0.86
+_TABLE_TOP_WITH_SUBTITLE = 0.84
+_TABLE_BOTTOM = 0.07
+_ROW_PADDING_PT = 7.0
+_LINE_PT = 11.0
+_CONT = " (cont.)"
+_CELL_PAD = 0.008
+_CONFIG_INDENT = "    "
+
+
+def _wrap(cell: str, width: int | None) -> str:
+    if width is None:
+        return cell
+    return "\n".join(textwrap.fill(line, width) or line for line in cell.split("\n"))
+
+
+def _row_height(cells: Sequence[str]) -> float:
+    return _ROW_PADDING_PT + _LINE_PT * max(cell.count("\n") + 1 for cell in cells)
+
+
+def _paginate(
+    rows: Sequence[list[str]],
+    section_of: Sequence[int | None],
+    available: float,
+    header_height: float,
+) -> list[list[tuple[list[str], bool]]]:
+    """Split ``rows`` into pages of at most ``available`` points (each page also
+    pays ``header_height`` for its column labels). Each row is returned with a
+    bold flag, set for section headers (rows some other row points at). A page
+    that starts inside a section repeats that section's header, marked
+    "(cont.)", so the rows below it keep their context. A section header never
+    ends a page: it moves to the next page together with its first row."""
+    headers = {index for index in section_of if index is not None}
+    pages: list[list[tuple[list[str], bool]]] = []
+    page: list[tuple[list[str], bool]] = []
+    used = header_height
+    for index, row in enumerate(rows):
+        height = _row_height(row)
+        needed = height
+        if index in headers and index + 1 < len(rows):
+            needed += _row_height(rows[index + 1])
+        if page and used + needed > available:
+            pages.append(page)
+            page, used = [], header_height
+            section = section_of[index]
+            if section is not None:
+                repeated = [rows[section][0] + _CONT, *rows[section][1:]]
+                page.append((repeated, True))
+                used += _row_height(repeated)
+        page.append((row, index in headers))
+        used += height
+    if page:
+        pages.append(page)
+    return pages
+
+
+def save_table_pages(
+    pdf: PdfPages,
+    title: str,
+    rows: Sequence[Sequence[str]],
+    col_labels: Sequence[str],
+    *,
+    col_widths: Sequence[float],
+    wrap_widths: Sequence[int | None],
+    section_of: Sequence[int | None] | None = None,
+    subtitle: str | None = None,
+) -> None:
+    """A table that may not fit one page. Each cell is wrapped to its column's
+    ``wrap_widths`` characters (``None`` leaves it as is), and rows that do not
+    fit flow onto continuation pages titled "<title> (cont.)". Rows have a
+    fixed height per text line, so a short table stays compact at the top of
+    its page instead of being stretched over it.
+
+    ``section_of[i]`` is the index of the section header row that row ``i``
+    belongs to, or ``None``. Header rows are drawn bold and are repeated at the
+    top of a continuation page that starts inside their section. Writes
+    nothing when ``rows`` is empty."""
+    if not rows:
+        return
+    wrapped = [
+        [_wrap(cell, width) for cell, width in zip(row, wrap_widths, strict=True)] for row in rows
+    ]
+    labels = list(col_labels)
+    top = _TABLE_TOP if subtitle is None else _TABLE_TOP_WITH_SUBTITLE
+    page_height = _A4_LANDSCAPE[1] * 72
+    header_height = _row_height(labels)
+    pages = _paginate(
+        wrapped,
+        section_of if section_of is not None else [None] * len(rows),
+        (top - _TABLE_BOTTOM) * page_height,
+        header_height,
+    )
+
+    for number, page in enumerate(pages):
+        fig = new_page(title if number == 0 else title + _CONT)
+        if subtitle is not None:
+            fig.text(0.04, 0.905, subtitle, color=MUTED, fontsize=9.5, ha="left")
+        heights = [header_height, *(_row_height(cells) for cells, _ in page)]
+        fraction = sum(heights) / page_height
+        ax = fig.add_axes((0.06, top - fraction, 0.88, fraction))
+        style_table(
+            ax,
+            [cells for cells, _ in page],
+            labels,
+            cellLoc="left",
+            colWidths=list(col_widths),
+        )
+        # Relative heights: the table's bbox scales them to the axes, so a
+        # three-line cell gets three times the room of a one-line cell. PAD is
+        # a fraction of the cell's width; scale it so every column gets the
+        # same text indent.
+        for (row, col), cell in ax.tables[0].get_celld().items():
+            cell.set_height(heights[row])
+            cell.PAD = _CELL_PAD / col_widths[col]
+            if row > 0 and page[row - 1][1]:
+                cell.set_text_props(weight="bold")
+        save_page(pdf, fig)
+
+
 def _format_config_value(value: object) -> str:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if value is None:
+        return "none"
+    if isinstance(value, (bool, str)):
         return str(value)
-    return f"{value:,}"
+    if isinstance(value, (int, float)):
+        return f"{value:,}"
+    if isinstance(value, tuple):
+        return "(" + ", ".join(_format_config_value(item) for item in value) + ")"
+    if isinstance(value, list):
+        return ", ".join(_format_config_value(item) for item in value) if value else "none"
+    if isinstance(value, Mapping) and not value:
+        return "none"
+    return str(value)
+
+
+def _config_rows(
+    fields: Mapping[str, object],
+    rows: list[list[str]],
+    section_of: list[int | None],
+    depth: int = 0,
+    section: int | None = None,
+) -> None:
+    """Flatten a (nested) ``asdict()`` result into rows. A non-empty mapping
+    (a nested config, or a mapping field) becomes a section header row with
+    its entries indented below it, so nothing is printed as a raw dict."""
+    for key, value in fields.items():
+        label = _CONFIG_INDENT * depth + str(key)
+        if isinstance(value, Mapping) and value:
+            header = len(rows)
+            rows.append([label, ""])
+            section_of.append(section)
+            _config_rows(value, rows, section_of, depth + 1, header)
+        else:
+            rows.append([label, _format_config_value(value)])
+            section_of.append(section)
 
 
 def _add_config_page(pdf: PdfPages, config: ReportConfig) -> None:
-    fig = new_page("Backtest Configuration")
-    ax = fig.add_axes((0.06, 0.07, 0.88, 0.79))
+    rows: list[list[str]] = []
+    section_of: list[int | None] = []
     # cast, not a DataclassInstance-typed protocol: asdict() raises its own
     # TypeError at runtime if config isn't actually a dataclass, so mypy's
     # static check here would be redundant weight on the protocol itself.
-    rows = [[key, _format_config_value(value)] for key, value in asdict(cast(Any, config)).items()]
-    style_table(ax, rows, ["Field", "Value"], cellLoc="left", colWidths=[0.35, 0.65])
-    save_page(pdf, fig)
+    _config_rows(asdict(cast(Any, config)), rows, section_of)
+    save_table_pages(
+        pdf,
+        "Backtest Configuration",
+        rows,
+        ["Field", "Value"],
+        col_widths=[0.3, 0.7],
+        wrap_widths=[None, 100],
+        section_of=section_of,
+    )
 
 
 def _add_cost_sweep_page(pdf: PdfPages, points: Sequence[CostPoint]) -> None:
@@ -409,7 +568,10 @@ def save_report(
     cost_sweep: Sequence[CostPoint] | None = None,
     extra_pages: Sequence[ReportPage] = (),
     config: ReportConfig,
+    overview_png: bool = True,
 ) -> Path:
+    """Write the numbered PDF report and return its path. ``overview_png``
+    also writes the overview page as ``<report>_overview.png`` next to it."""
     path = _next_report_path(output_dir, stem=f"{_slugify(config.name)}_report")
     with PdfPages(path) as pdf:
         _add_overview_page(
@@ -419,7 +581,7 @@ def save_report(
             metrics,
             trade_metrics,
             correlation,
-            png_path=path.with_name(f"{path.stem}_overview.png"),
+            png_path=path.with_name(f"{path.stem}_overview.png") if overview_png else None,
         )
         _add_monthly_page(pdf, monthly_tables)
         if cost_sweep is not None:

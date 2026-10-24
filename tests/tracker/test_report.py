@@ -1,9 +1,12 @@
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import cast
 
+import matplotlib.pyplot as plt
 import pytest
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.figure import Figure
 
 from backtester.config import BacktestConfig
 from backtester.tracker import report
@@ -402,6 +405,7 @@ def test_public_page_helpers_and_colors_are_exported() -> None:
         "save_page",
         "style_table",
         "draw_heatmap",
+        "save_table_pages",
         "SURFACE",
         "INK",
         "MUTED",
@@ -409,3 +413,126 @@ def test_public_page_helpers_and_colors_are_exported() -> None:
         "NEGATIVE",
     ):
         assert hasattr(report, name), name
+
+
+def test_overview_png_can_be_turned_off(tmp_path: Path) -> None:
+    metrics, trade_metrics, histories, config = _sample_inputs()
+
+    path = save_report(
+        output_dir=tmp_path,
+        histories=histories,
+        metrics=metrics,
+        trade_metrics=trade_metrics,
+        monthly_tables={label: monthly_returns_table(h) for label, h in histories.items()},
+        correlation=strategy_correlation_matrix(histories),
+        config=config,
+        overview_png=False,
+    )
+
+    assert path.exists()
+    assert list(tmp_path.glob("*.png")) == []
+
+
+@dataclass(frozen=True)
+class _Inner:
+    lookback: int = 252
+    bounds: dict[str, tuple[float, float]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _Outer:
+    name: str = "Nested"
+    tickers: list[str] = field(default_factory=lambda: ["SPY", "QQQ"])
+    initial_cash: float = 1_000_000.0
+    stop_loss_pct: float | None = None
+    inner: _Inner = field(default_factory=_Inner)
+    optional: _Inner | None = None
+
+
+def test_config_rows_flatten_nested_configs_into_sections() -> None:
+    rows: list[list[str]] = []
+    section_of: list[int | None] = []
+
+    report._config_rows(asdict(_Outer()), rows, section_of)
+
+    assert rows == [
+        ["name", "Nested"],
+        ["tickers", "SPY, QQQ"],
+        ["initial_cash", "1,000,000.0"],
+        ["stop_loss_pct", "none"],
+        ["inner", ""],
+        ["    lookback", "252"],
+        ["    bounds", "none"],
+        ["optional", "none"],
+    ]
+    assert section_of == [None, None, None, None, None, 4, 4, None]
+
+
+def test_config_rows_show_mapping_entries_as_rows() -> None:
+    rows: list[list[str]] = []
+    section_of: list[int | None] = []
+
+    report._config_rows(asdict(_Inner(bounds={"Equity": (-0.5, 0.5)})), rows, section_of)
+
+    assert rows == [["lookback", "252"], ["bounds", ""], ["    Equity", "(-0.5, 0.5)"]]
+    assert section_of == [None, None, 1]
+
+
+def test_paginate_repeats_the_section_header_on_a_continuation_page() -> None:
+    rows = [["top", "1"], ["section", ""], ["    a", "2"], ["    b", "3"], ["    c", "4"]]
+    section_of = [None, None, 1, 1, 1]
+    row = report._row_height(["x"])
+
+    pages = report._paginate(rows, section_of, available=4 * row, header_height=row)
+
+    assert pages == [
+        [(["top", "1"], False), (["section", ""], True), (["    a", "2"], False)],
+        [(["section (cont.)", ""], True), (["    b", "3"], False), (["    c", "4"], False)],
+    ]
+
+
+def test_paginate_never_ends_a_page_on_a_section_header() -> None:
+    rows = [["top", "1"], ["other", "2"], ["section", ""], ["    a", "3"]]
+    section_of = [None, None, None, 2]
+    row = report._row_height(["x"])
+
+    pages = report._paginate(rows, section_of, available=4 * row, header_height=row)
+
+    assert pages == [
+        [(["top", "1"], False), (["other", "2"], False)],
+        [(["section", ""], True), (["    a", "3"], False)],
+    ]
+
+
+class _CountingPdf:
+    def __init__(self) -> None:
+        self.pages = 0
+
+    def savefig(self, figure: Figure, **_: object) -> None:
+        self.pages += 1
+        plt.close(figure)
+
+
+def test_save_table_pages_adds_pages_only_when_the_rows_do_not_fit() -> None:
+    short, long = _CountingPdf(), _CountingPdf()
+    rows = [[f"row {i}", "value"] for i in range(200)]
+
+    for pdf, count in ((short, 5), (long, 200)):
+        report.save_table_pages(
+            cast(PdfPages, pdf),
+            "Table",
+            rows[:count],
+            ["Field", "Value"],
+            col_widths=[0.3, 0.7],
+            wrap_widths=[None, 100],
+        )
+
+    assert short.pages == 1
+    assert long.pages > 1
+
+
+def test_wrap_breaks_long_cells_into_lines_instead_of_cutting_them() -> None:
+    wrapped = report._wrap("SPY, " * 60, 100)
+
+    assert wrapped.count("\n") == 2
+    assert wrapped.replace("\n", " ").split() == ("SPY, " * 60).split()
