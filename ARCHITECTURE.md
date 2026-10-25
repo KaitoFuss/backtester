@@ -73,7 +73,10 @@ cache that `get_next_bar` populates, so it only ever reflects bars already
 consumed by the loop — that is what keeps execution from reading ahead.
 `data/fetch_yfinance.py` downloads daily bars into that layout, sorted by
 date then ticker, overwriting the target file wholesale so a previous fetch
-with a different universe cannot leak into the current one.
+with a different universe cannot leak into the current one. By default it
+asks yfinance for dividend-adjusted (total-return) OHLC (`auto_adjust=True`);
+the engine has no separate dividend handling, so price-only bars would drop
+every payout from returns.
 
 ## Components
 

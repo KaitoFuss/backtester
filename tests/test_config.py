@@ -20,8 +20,23 @@ def test_fetch_data_config_applies_defaults(tmp_path: Path) -> None:
     config = FetchDataConfig.from_json(path)
 
     assert config == FetchDataConfig(
-        tickers=["AAPL", "MSFT"], start="2024-01-02", end="2024-03-31", out="data/raw.parquet"
+        tickers=["AAPL", "MSFT"],
+        start="2024-01-02",
+        end="2024-03-31",
+        out="data/raw.parquet",
+        auto_adjust=True,
     )
+
+
+def test_fetch_data_config_reads_auto_adjust(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        {"tickers": ["AAPL"], "start": "2024-01-02", "end": "2024-03-31", "auto_adjust": False},
+    )
+
+    config = FetchDataConfig.from_json(path)
+
+    assert config.auto_adjust is False
 
 
 def test_fetch_data_config_missing_required_field_raises(tmp_path: Path) -> None:

@@ -24,6 +24,7 @@ def fetch_to_parquet(
     end: str,
     out_path: Path,
     downloader: Callable[..., pd.DataFrame] = yf.download,
+    auto_adjust: bool = True,
 ) -> None:
     """Download OHLCV history and write it as one tidy Parquet file.
 
@@ -34,8 +35,15 @@ def fetch_to_parquet(
 
     The file is overwritten wholesale, so a previous fetch with a different
     universe or date range cannot leak into this one.
+
+    ``auto_adjust=True`` (the default) writes dividend-adjusted, total-return
+    OHLC: every bar is back-adjusted for splits and dividends, so close-to-close
+    returns include the payout. ``False`` writes split-adjusted, price-only OHLC,
+    which shows a fake drop on every ex-dividend day. Back-adjusted price levels
+    change on every refetch (each new dividend rescales all earlier bars), but
+    the returns they imply do not. Volume is never adjusted.
     """
-    data = downloader(tickers, start=start, end=end, group_by="ticker", auto_adjust=False)
+    data = downloader(tickers, start=start, end=end, group_by="ticker", auto_adjust=auto_adjust)
 
     records: list[dict[str, object]] = []
     for timestamp, row in data.iterrows():
