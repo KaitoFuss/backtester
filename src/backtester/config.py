@@ -12,6 +12,9 @@ class FetchDataConfig:
     start: str
     end: str
     out: str = "data/raw.parquet"
+    # True: dividend-adjusted (total-return) OHLC. False: split-adjusted,
+    # price-only OHLC. See ``fetch_to_parquet``.
+    auto_adjust: bool = True
 
     @classmethod
     def from_json(cls, path: Path) -> Self:

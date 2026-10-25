@@ -151,8 +151,29 @@ def test_downloader_receives_requested_range(tmp_path: Path) -> None:
         "start": "2024-01-02",
         "end": "2024-01-05",
         "group_by": "ticker",
-        "auto_adjust": False,
+        "auto_adjust": True,
     }
+
+
+def test_auto_adjust_false_passes_through_to_downloader(tmp_path: Path) -> None:
+    seen: dict[str, object] = {}
+
+    def recording_downloader(*_args: object, **kwargs: object) -> pd.DataFrame:
+        seen.update(kwargs)
+        return _fake_downloader()
+
+    out = tmp_path / "raw.parquet"
+
+    fetch_to_parquet(
+        TICKERS,
+        "2024-01-02",
+        "2024-01-05",
+        out,
+        downloader=recording_downloader,
+        auto_adjust=False,
+    )
+
+    assert seen["auto_adjust"] is False
 
 
 def test_summary_log_includes_date_range(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

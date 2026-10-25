@@ -65,6 +65,11 @@ re-runs config across ladder of trading costs and folds Sharpe-vs-cost page
 with breakeven half-spread into report. Swap in
 `configs/zscore_backtest.json` for risk-sized band-trading variant.
 
+Fetched bars are dividend-adjusted (total-return) by default. Set
+`"auto_adjust": false` in fetch config for split-adjusted, price-only bars.
+That was the old behavior: Parquet files fetched before this default changed
+hold price-only bars, so refetch them.
+
 ## Project structure
 
 ```

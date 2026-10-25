@@ -99,4 +99,8 @@ and appends the Sharpe-vs-cost page to the PDF, so it takes several times
 longer than a plain run. Drop it for a fast single run without a cost curve.
 
 Numbers will differ slightly from committed reports if yfinance's historical
-data has since been revised.
+data has since been revised. Committed reports were generated from price-only
+(split-adjusted, not dividend-adjusted) bars; fetch now defaults to
+total-return bars, so a fresh regeneration differs by the dividends (mostly in
+bond ETFs `TLT`/`IEF`). Set `"auto_adjust": false` in fetch config to
+reproduce the committed inputs.
